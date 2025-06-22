@@ -59,16 +59,19 @@ class _AppListScreenState extends State<AppListScreen> {
         return;
       }
     }
+    print('Initialization complete, loading apps');
     await _loadApps();
   }
 
   Future<void> _loadApps() async {
     try {
+      print('Loading apps via getAvailableApps');
       final apps = await _appBlocka.getAvailableApps();
       print(
         'Loaded apps: ${apps.length} apps - ${apps.map((a) => a.packageName).toList()}',
       );
       setState(() {
+        _allApps = [];
         _allApps = apps;
         _selectedBundleIds = apps.map((a) => a.packageName).toList();
       });
@@ -112,7 +115,10 @@ class _AppListScreenState extends State<AppListScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () {
+                  print('Android picker: Cancelled');
+                  Navigator.pop(context);
+                },
                 child: const Text('Cancel'),
               ),
               TextButton(
@@ -146,9 +152,10 @@ class _AppListScreenState extends State<AppListScreen> {
           padding: const EdgeInsets.all(8.0),
           child: ElevatedButton(
             onPressed: () async {
-              print('Fetching apps');
+              print('Button pressed: Fetching apps');
               if (Platform.isAndroid) {
                 await _loadApps();
+                print('Showing Android picker');
                 _showAndroidPicker();
               } else {
                 await _loadApps();

@@ -75,12 +75,15 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         case "getAvailableApps":
             if #available(iOS 16.0, *) {
                 guard flutterResult == nil else {
+                    print("getAvailableApps: Picker already in progress")
                     result(FlutterError(code: "PICKER_IN_PROGRESS", message: "Another picker is already active", details: nil))
                     return
                 }
+                print("getAvailableApps: Storing flutterResult")
                 flutterResult = result
                 getInstalledApps()
             } else {
+                print("getAvailableApps: iOS version not supported")
                 result([])
             }
             
@@ -156,7 +159,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private func presentFamilyActivityPicker(completion: @escaping ([[String: Any]]) -> Void) {
         if #available(iOS 16.0, *) {
             let selection = FamilyActivitySelection()
-            print("Presenting FamilyActivityPicker with initial selection: \(selection.applications)")
+            print("presentFamilyActivityPicker: Initial selection: \(selection.applications)")
             let pickerView = FamilyActivityPickerView(
                 selection: selection,
                 onDismiss: { [weak self] in
@@ -165,15 +168,16 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                         completion([])
                         return
                     }
-                    print("Picker dismissed with selection: \(selection.applications)")
+                    print("onDismiss: Selection after dismissal: \(selection.applications)")
                     self.selectedApps = selection.applications.reduce(into: [String: Application]()) { dict, app in
                         guard let bundleId = app.bundleIdentifier else {
                             print("Warning: Nil bundleIdentifier for app: \(app)")
                             return
                         }
+                        print("Processing app: \(bundleId)")
                         dict[bundleId] = app
                     }
-                    print("Updated selectedApps: \(self.selectedApps.keys)")
+                    print("onDismiss: selectedApps updated: \(self.selectedApps.keys)")
                     let apps = self.selectedApps.map { (bundleId, app) in
                         let appInfo: [String: Any] = [
                             "packageName": bundleId,
@@ -182,38 +186,45 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                         ]
                         return appInfo
                     }
+                    print("onDismiss: Returning apps: \(apps)")
                     completion(apps)
-                    if let rootViewController = UIApplication.shared.windows.first?.rootViewController {
+                    if let rootViewController = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+                        print("Dismissing picker from rootViewController")
                         rootViewController.dismiss(animated: true, completion: nil)
                     } else {
-                        print("Warning: No rootViewController found for dismissal")
+                        print("Warning: No key window or rootViewController found for dismissal")
+                        completion(apps) // Ensure completion is called even if dismissal fails
                     }
                 }
             )
             let hostingController = UIHostingController(rootView: pickerView)
-            if let rootViewController = UIApplication.shared.windows.first?.rootViewController {
+            if let rootViewController = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+                print("Presenting picker on rootViewController")
                 rootViewController.present(hostingController, animated: true, completion: nil)
             } else {
-                print("Error: No rootViewController found to present picker")
+                print("Error: No key window or rootViewController found to present picker")
                 completion([])
             }
         } else {
+            print("presentFamilyActivityPicker: iOS version not supported")
             completion([])
         }
     }
     
     private func getInstalledApps() {
         if #available(iOS 16.0, *) {
+            print("getInstalledApps: Starting picker presentation")
             presentFamilyActivityPicker { [weak self] apps in
                 guard let self = self, let result = self.flutterResult else {
                     print("getInstalledApps: self or flutterResult is nil")
                     return
                 }
-                print("Returning apps to Flutter: \(apps)")
+                print("getInstalledApps: Returning apps to Flutter: \(apps)")
                 result(apps)
                 self.flutterResult = nil
             }
         } else {
+            print("getInstalledApps: iOS version not supported")
             flutterResult?([])
             flutterResult = nil
         }
@@ -233,7 +244,6 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         if bundleId == Bundle.main.bundleIdentifier {
             return Bundle.main.infoDictionary?["CFBundleName"] as? String
         }
-        // Add common app mappings for better UX
         let appNameMapping: [String: String] = [
             "com.apple.mobilesafari": "Safari",
             "com.google.youtube": "YouTube",
