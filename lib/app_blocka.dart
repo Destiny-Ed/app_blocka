@@ -2,7 +2,7 @@ import 'package:app_blocka/app_blocka_platform_interface.dart';
 import 'package:app_blocka/app_usage_info_model.dart';
 
 class AppBlocka {
-  static AppBlockaPlatform get _platform => AppBlockaPlatform.instance;
+  static final AppBlockaPlatform _platform = AppBlockaPlatform.instance;
   Future<String?> getPlatformVersion() {
     return _platform.getPlatformVersion();
   }
@@ -19,11 +19,11 @@ class AppBlocka {
     return _platform.checkPermission();
   }
 
-  Future<bool> selectApps() async {
+  Future<bool> presentAppPicker({List<String>? bundleIds}) async {
     try {
-      return await _platform.selectApps();
+      return await _platform.presentAppPicker(bundleIds: bundleIds);
     } catch (e) {
-      print('Failed to select apps: $e');
+      print('Failed to present app picker: $e');
       rethrow;
     }
   }

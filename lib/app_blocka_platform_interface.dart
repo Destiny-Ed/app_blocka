@@ -20,7 +20,7 @@ abstract class AppBlockaPlatform extends PlatformInterface {
   Future<void> initialize();
   Future<bool> requestPermission();
   Future<bool> checkPermission();
-  Future<bool> selectApps();
+  Future<bool> presentAppPicker({List<String>? bundleIds});
   Future<List<AppInfo>> getAvailableApps();
   Future<void> setTimeLimit(String packageName, int limitMinutes);
   Future<void> setSchedule(

@@ -5,6 +5,7 @@ import ManagedSettings
 import DeviceActivity
 import UserNotifications
 import BackgroundTasks
+import SwiftUI
 
 public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
@@ -12,6 +13,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private var selectedApps: [String: Application] = [:] // Store bundle ID to Application
     private var timeLimits: [String: Int] = [:] // Minutes
     private var schedules: [String: [DeviceActivitySchedule]] = [:]
+    private var flutterResult: FlutterResult?
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "app_blocka", binaryMessenger: registrar.messenger())
@@ -56,7 +58,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                     }
                 }
             } else {
-                result(false) // Family Controls not available before iOS 16
+                result(false)
             }
             
         case "checkPermission":
@@ -67,18 +69,14 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 result(false)
             }
             
-        case "selectApps":
+        case "presentAppPicker":
             if #available(iOS 16.0, *) {
-                Task {
-                    do {
-                        let selection = try await FamilyActivityPicker().selection
-                        self.selectedApps = selection.applications.reduce(into: [:]) { $0[$1.bundleIdentifier] = $1 }
-                        result(true)
-                    } catch {
-                        print("Failed to select apps: \(error)")
-                        result(false)
-                    }
+                guard flutterResult == nil else {
+                    result(FlutterError(code: "PICKER_IN_PROGRESS", message: "Another picker is already active", details: nil))
+                    return
                 }
+                flutterResult = result
+                presentFamilyActivityPicker()
             } else {
                 result(false)
             }
@@ -156,6 +154,25 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         }
     }
     
+    private func presentFamilyActivityPicker() {
+        if #available(iOS 16.0, *) {
+            let selection = FamilyActivitySelection()
+            let pickerView = FamilyActivityPickerView(
+                selection: selection,
+                onDismiss: { [weak self] in
+                    guard let self = self, let result = self.flutterResult else { return }
+                    self.selectedApps = selection.applications.reduce(into: [:]) { $0[$1.bundleIdentifier] = $1 }
+                    result(true)
+                    self.flutterResult = nil
+                    // Dismiss the picker
+                    UIApplication.shared.windows.first?.rootViewController?.dismiss(animated: true)
+                }
+            )
+            let hostingController = UIHostingController(rootView: pickerView)
+            UIApplication.shared.windows.first?.rootViewController?.present(hostingController, animated: true)
+        }
+    }
+    
     private func updateShield() {
         if #available(iOS 16.0, *) {
             let applications = restrictedApps.compactMap { bundleId -> ApplicationToken? in
@@ -170,8 +187,8 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         return selectedApps.map { (bundleId, app) in
             var appInfo: [String: Any] = [
                 "packageName": bundleId,
-                "name": app.localizedName ?? bundleId,
-                "isSystemApp": false // Simplified; no system app detection without private APIs
+                "name": getAppName(for: bundleId) ?? bundleId,
+                "isSystemApp": bundleId.hasPrefix("com.apple.")
             ]
             if let iconData = getAppIcon(for: bundleId) {
                 appInfo["icon"] = iconData
@@ -180,8 +197,16 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         }
     }
     
+    private func getAppName(for bundleId: String) -> String? {
+        // For main app, use bundle info
+        if bundleId == Bundle.main.bundleIdentifier {
+            return Bundle.main.infoDictionary?["CFBundleName"] as? String
+        }
+        // Fallback: Use bundle ID or a future mapping
+        return nil
+    }
+    
     private func getAppIcon(for bundleId: String) -> String? {
-        // Try to get icon from the app bundle
         if bundleId == Bundle.main.bundleIdentifier,
            let iconName = Bundle.main.infoDictionary?["CFBundleIconName"] as? String,
            let icon = UIImage(named: iconName) {
@@ -192,7 +217,6 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
             UIGraphicsEndImageContext()
             return scaledImage?.pngData()?.base64EncodedString()
         }
-        // Fallback: No icon for other apps without private APIs
         return nil
     }
     
@@ -214,7 +238,6 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     }
     
     private func getAppUsageStats() -> [[String: Any]] {
-        // Placeholder: Use DeviceActivityReport for actual implementation
         return restrictedApps.map { bundleId in
             var stat: [String: Any] = [
                 "packageName": bundleId,

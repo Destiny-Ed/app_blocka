@@ -34,19 +34,23 @@ class MethodChannelAppBlocka extends AppBlockaPlatform {
   }
 
   @override
-  Future<bool> selectApps() async {
+  Future<bool> presentAppPicker({List<String>? bundleIds}) async {
     try {
-      final result = await _channel.invokeMethod<bool>('selectApps');
+      final result = await _channel.invokeMethod<bool>('presentAppPicker', {
+        'bundleIds': bundleIds ?? [],
+      });
       return result ?? false;
     } catch (e) {
-      throw Exception('Error selecting apps: $e');
+      throw Exception('Error presenting app picker: $e');
     }
   }
 
   @override
   Future<List<AppInfo>> getAvailableApps() async {
     try {
-      final apps = await _channel.invokeMethod<List<dynamic>>('getAvailableApps');
+      final apps = await _channel.invokeMethod<List<dynamic>>(
+        'getAvailableApps',
+      );
       return apps?.map((app) {
             final map = Map<String, dynamic>.from(app as Map);
             return AppInfo(
@@ -71,7 +75,10 @@ class MethodChannelAppBlocka extends AppBlockaPlatform {
   }
 
   @override
-  Future<void> setSchedule(String packageName, List<Map<String, int>> schedules) async {
+  Future<void> setSchedule(
+    String packageName,
+    List<Map<String, int>> schedules,
+  ) async {
     await _channel.invokeMethod('setSchedule', {
       'packageName': packageName,
       'schedules': schedules,
@@ -118,9 +125,9 @@ class MethodChannelAppBlocka extends AppBlockaPlatform {
 
   @override
   Stream<String> get onAppRestricted {
-    _onAppRestricted ??= _eventChannel
-        .receiveBroadcastStream()
-        .map((event) => event as String);
+    _onAppRestricted ??= _eventChannel.receiveBroadcastStream().map(
+      (event) => event as String,
+    );
     return _onAppRestricted!;
   }
 }
