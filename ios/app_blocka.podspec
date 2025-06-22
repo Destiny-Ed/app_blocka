@@ -4,14 +4,14 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'app_blocka'
-  s.version          = '0.0.1'
-  s.summary          = 'A new Flutter plugin project.'
+  s.version          = '1.0.0'
+  s.summary          = 'A Flutter plugin to limit app usage and screen time on iOS.'
   s.description      = <<-DESC
-A new Flutter plugin project.
+A Flutter plugin to manage app restrictions, including time limits, schedules, and usage tracking on iOS.
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/Destiny-Ed/app_blocka'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'Destiny Ed' => 'talk2destinyed@gmail.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'

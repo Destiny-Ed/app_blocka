@@ -1,7 +1,7 @@
 name: app_blocka
 description: "A Flutter plugin to limit app usage and screen time on Android and iOS."
 version: 1.0.0
-homepage: 
+homepage: https://github.com/Destiny-Ed/app_blocka
 
 environment:
   sdk: ^3.7.2
