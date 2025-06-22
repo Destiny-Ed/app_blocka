@@ -14,6 +14,7 @@ A Flutter plugin to manage app restrictions, including time limits, schedules, a
   s.author           = { 'Destiny Ed' => 'talk2destinyed@gmail.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
+  s.module_name = 'app_blocka'
   s.dependency 'Flutter'
   s.platform = :ios, '16.0'
 

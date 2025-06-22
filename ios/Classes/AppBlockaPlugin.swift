@@ -6,7 +6,7 @@ import DeviceActivity
 import UserNotifications
 import BackgroundTasks
 
-@objc class AppBlockaPlugin: NSObject, FlutterPlugin {
+public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
     private var restrictedApps: Set<String> = [] // Store bundle IDs
     private var timeLimits: [String: Int] = [:] // Minutes
