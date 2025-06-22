@@ -16,6 +16,7 @@ struct FamilyActivityPickerView: View {
     var body: some View {
         NavigationView {
             FamilyActivityPicker(selection: $selection)
+                .navigationBarTitle("Select Apps", displayMode: .inline)
                 .navigationBarItems(
                     leading: Button("Cancel") {
                         print("FamilyActivityPickerView: Cancel tapped, selection: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
