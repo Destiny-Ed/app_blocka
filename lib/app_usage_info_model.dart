@@ -6,7 +6,7 @@ class AppInfo {
   final String packageName;
   final String name;
   final bool isSystemApp;
-  final Uint8List? icon;
+  final String? icon; // Base64-encoded string
 
   AppInfo({
     required this.packageName,
@@ -15,16 +15,16 @@ class AppInfo {
     this.icon,
   });
 
-  factory AppInfo.fromMap(Map<String, dynamic> map) {
+  factory AppInfo.fromJson(Map<String, dynamic> json) {
     return AppInfo(
-      packageName: map['packageName'] as String,
-      name: map['name'] as String,
-      isSystemApp: map['isSystemApp'] as bool,
-      icon: map['icon'] != null ? Uint8List.fromList((map['icon'] as List<dynamic>).cast<int>()) : null,
+      packageName: json['packageName'] as String,
+      name: json['name'] as String,
+      isSystemApp: json['isSystemApp'] as bool,
+      icon: json['icon'] as String?,
     );
   }
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toJson() {
     return {
       'packageName': packageName,
       'name': name,
@@ -38,8 +38,8 @@ class AppInfo {
 /// Model for app usage statistics, including icon.
 class AppUsage {
   final String packageName;
-  final Duration usageTime;
-  final Uint8List? icon;
+  final int usageTime;
+  final String? icon; // Base64-encoded string
 
   AppUsage({
     required this.packageName,
@@ -47,18 +47,18 @@ class AppUsage {
     this.icon,
   });
 
-  factory AppUsage.fromMap(Map<String, dynamic> map) {
+  factory AppUsage.fromJson(Map<String, dynamic> json) {
     return AppUsage(
-      packageName: map['packageName'] as String,
-      usageTime: Duration(milliseconds: map['usageTime'] as int),
-      icon: map['icon'] != null ? Uint8List.fromList((map['icon'] as List<dynamic>).cast<int>()) : null,
+      packageName: json['packageName'] as String,
+      usageTime: json['usageTime'] as int,
+      icon: json['icon'] as String?,
     );
   }
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toJson() {
     return {
       'packageName': packageName,
-      'usageTime': usageTime.inMilliseconds,
+      'usageTime': usageTime,
       'icon': icon,
     };
   }

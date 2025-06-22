@@ -167,8 +167,8 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         return apps
     }
     
-    private func getAppIcon(for bundleId: String) -> [UInt8]? {
-        // Simplified: Return icon for main app only
+    private func getAppIcon(for bundleId: String) -> String? {
+        // Return base64-encoded icon data
         guard bundleId == Bundle.main.bundleIdentifier,
               let iconName = Bundle.main.infoDictionary?["CFBundleIconName"] as? String,
               let icon = UIImage(named: iconName) else {
@@ -179,7 +179,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         icon.draw(in: CGRect(origin: .zero, size: size))
         let scaledImage = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-        return scaledImage?.pngData()?.map { UInt8($0) }
+        return scaledImage?.pngData()?.base64EncodedString()
     }
     
     private func startMonitoringUsage(for bundleId: String) {

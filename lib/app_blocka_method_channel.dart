@@ -89,13 +89,21 @@ class MethodChannelAppBlocka extends AppBlockaPlatform {
   @override
   Future<List<AppInfo>> getAvailableApps() async {
     try {
-      final List<dynamic> apps = await methodChannel.invokeMethod(
+      final apps = await methodChannel.invokeMethod<List<dynamic>>(
         'getAvailableApps',
       );
-      return apps.map((app) => AppInfo.fromMap(app)).toList();
+      return apps?.map((app) {
+            final map = Map<String, dynamic>.from(app as Map);
+            return AppInfo(
+              packageName: map['packageName'] as String,
+              name: map['name'] as String,
+              isSystemApp: map['isSystemApp'] as bool,
+              icon: map['icon'] != null ? (map['icon'] as String) : null,
+            );
+          }).toList() ??
+          [];
     } catch (e) {
-      debugPrint('Error fetching apps: $e');
-      return [];
+      throw Exception('Error fetching apps: $e');
     }
   }
 
@@ -165,13 +173,20 @@ class MethodChannelAppBlocka extends AppBlockaPlatform {
   @override
   Future<List<AppUsage>> getUsageStats() async {
     try {
-      final List<dynamic> stats = await methodChannel.invokeMethod(
+      final stats = await methodChannel.invokeMethod<List<dynamic>>(
         'getUsageStats',
       );
-      return stats.map((s) => AppUsage.fromMap(s)).toList();
+      return stats?.map((stat) {
+            final map = Map<String, dynamic>.from(stat as Map);
+            return AppUsage(
+              packageName: map['packageName'] as String,
+              usageTime: map['usageTime'] as int,
+              icon: map['icon'] != null ? (map['icon'] as String) : null,
+            );
+          }).toList() ??
+          [];
     } catch (e) {
-      debugPrint('Error fetching usage stats: $e');
-      return [];
+      throw Exception('Error fetching usage stats: $e');
     }
   }
 
