@@ -46,6 +46,9 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
+	<key>MinimumOSVersion</key>
+    <string>16.0</string>
+
 	<key>NSUserNotificationsUsageDescription</key>
     <string>Allow notifications for app restriction alerts.</string>
     <key>BGTaskSchedulerPermittedIdentifiers</key>

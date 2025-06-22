@@ -8,7 +8,7 @@ import BackgroundTasks
 
 @objc class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
-    private var restrictedApps: [String: ApplicationToken] = [:] // Map bundleId to ApplicationToken
+    private var restrictedApps: Set<String> = [] // Store bundle IDs
     private var timeLimits: [String: Int] = [:] // Minutes
     private var schedules: [String: [DeviceActivitySchedule]] = [:]
 
@@ -27,15 +27,12 @@ import BackgroundTasks
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
-        case "getPlatformVersion":
+         case "getPlatformVersion":
             result("iOS " + UIDevice.current.systemVersion)
             
         case "initialize":
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
-            Task {
-                await fetchApplicationTokens()
-                self.scheduleBackgroundMonitoring()
-            }
+            scheduleBackgroundMonitoring()
             result(nil)
             
         case "startBackgroundService":
@@ -47,20 +44,27 @@ import BackgroundTasks
             result(nil)
             
         case "requestPermission":
-            Task {
-                do {
-                    try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-                    await fetchApplicationTokens()
-                    result(true)
-                } catch {
-                    print("Authorization failed: \(error)")
-                    result(false)
+            if #available(iOS 16.0, *) {
+                Task {
+                    do {
+                        try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                        result(true)
+                    } catch {
+                        print("Authorization failed: \(error)")
+                        result(false)
+                    }
                 }
+            } else {
+                result(false) // Family Controls not available before iOS 16
             }
             
         case "checkPermission":
-            let status = AuthorizationCenter.shared.authorizationStatus
-            result(status == .approved)
+            if #available(iOS 16.0, *) {
+                let status = AuthorizationCenter.shared.authorizationStatus
+                result(status == .approved)
+            } else {
+                result(false)
+            }
             
         case "getAvailableApps":
             let apps = getInstalledApps()
@@ -101,20 +105,18 @@ import BackgroundTasks
             }
             schedules[packageName] = deviceSchedules
             startDeviceActivityMonitoring(for: packageName)
-            if let token = restrictedApps[packageName] {
-                restrictedApps[packageName] = token
+            if restrictedApps.contains(packageName) {
                 updateShield()
             }
             result(nil)
             
         case "blockApp":
             guard let args = call.arguments as? [String: String],
-                  let bundleId = args["packageName"],
-                  let token = restrictedApps[bundleId] else {
-                result(FlutterError(code: "INVALID_ARGS", message: "Invalid or unauthorized package name", details: nil))
+                  let bundleId = args["packageName"] else {
+                result(FlutterError(code: "INVALID_ARGS", message: "Invalid package name", details: nil))
                 return
             }
-            restrictedApps[bundleId] = token
+            restrictedApps.insert(bundleId)
             updateShield()
             result(nil)
             
@@ -124,7 +126,7 @@ import BackgroundTasks
                 result(FlutterError(code: "INVALID_ARGS", message: "Invalid package name", details: nil))
                 return
             }
-            restrictedApps.removeValue(forKey: bundleId)
+            restrictedApps.remove(bundleId)
             updateShield()
             result(nil)
             
@@ -138,32 +140,38 @@ import BackgroundTasks
     }
     
     private func updateShield() {
-        let tokens = Set(restrictedApps.values)
-        store.shield.applications = tokens.isEmpty ? nil : tokens
+        if #available(iOS 16.0, *) {
+            let applications = restrictedApps.compactMap { bundleId -> ApplicationToken? in
+                guard let app = try? Application(bundleIdentifier: bundleId) else { return nil }
+                return app.token
+            }
+            store.shield.applications = restrictedApps.isEmpty ? nil : Set(applications)
+        }
     }
     
     private func getInstalledApps() -> [[String: Any]] {
-        guard let apps = LSApplicationWorkspace.default().allApplications() as? [LSApplicationProxy] else {
-            return []
-        }
-        return apps.compactMap { app in
-            guard let bundleId = app.bundleIdentifier,
-                  let name = app.localizedName() else { return nil }
+        // Fallback: Return only the main app or rely on Family Controls selection
+        var apps: [[String: Any]] = []
+        if let bundleId = Bundle.main.bundleIdentifier,
+           let name = Bundle.main.infoDictionary?["CFBundleName"] as? String {
             var appInfo: [String: Any] = [
                 "packageName": bundleId,
                 "name": name,
-                "isSystemApp": app.applicationType == .system
+                "isSystemApp": false
             ]
             if let iconData = getAppIcon(for: bundleId) {
                 appInfo["icon"] = iconData
             }
-            return appInfo
+            apps.append(appInfo)
         }
+        return apps
     }
     
     private func getAppIcon(for bundleId: String) -> [UInt8]? {
-        guard let app = LSApplicationWorkspace.default().allApplications()?.first(where: { ($0 as? LSApplicationProxy)?.bundleIdentifier == bundleId }) as? LSApplicationProxy,
-              let icon = app.icon else {
+        // Simplified: Return icon for main app only
+        guard bundleId == Bundle.main.bundleIdentifier,
+              let iconName = Bundle.main.infoDictionary?["CFBundleIconName"] as? String,
+              let icon = UIImage(named: iconName) else {
             return nil
         }
         let size = CGSize(width: 48, height: 48)
@@ -193,7 +201,7 @@ import BackgroundTasks
     
     private func getAppUsageStats() -> [[String: Any]] {
         // Placeholder: Use DeviceActivityReport for actual implementation
-        return restrictedApps.keys.map { bundleId in
+        return restrictedApps.map { bundleId in
             var stat: [String: Any] = [
                 "packageName": bundleId,
                 "usageTime": 0
@@ -229,30 +237,20 @@ import BackgroundTasks
         scheduleBackgroundMonitoring()
         for (bundleId, limit) in timeLimits {
             let usage = 0 // Placeholder
-            if usage / 60 >= limit, let token = restrictedApps[bundleId] {
-                restrictedApps[bundleId] = token
+            if usage / 60 >= limit {
+                restrictedApps.insert(bundleId)
                 updateShield()
                 showNotification(title: "Time Limit Exceeded", body: "\(bundleId) has reached its time limit.")
             }
         }
         task.setTaskCompleted(success: true)
     }
-
-    private func fetchApplicationTokens() async {
-        guard AuthorizationCenter.shared.authorizationStatus == .approved else { return }
-        let authorizedApps = await AuthorizationCenter.shared.authorizedApplications()
-        for app in authorizedApps {
-            if let bundleId = app.bundleIdentifier {
-                restrictedApps[bundleId] = app.token
-            }
-        }
-    }
 }
 
 extension AppBlockaPlugin: FlutterStreamHandler {
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            if let topApp = self.getTopAppBundleId(), self.restrictedApps.keys.contains(topApp) {
+            if let topApp = self.getTopAppBundleId(), self.restrictedApps.contains(topApp) {
                 events(topApp)
             }
         }
