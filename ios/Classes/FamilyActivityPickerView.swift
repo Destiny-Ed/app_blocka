@@ -16,7 +16,6 @@ struct FamilyActivityPickerView: View {
     var body: some View {
         NavigationView {
             FamilyActivityPicker(selection: $selection)
-                .navigationBarTitle("Select Apps", displayMode: .inline)
                 .navigationBarItems(
                     leading: Button("Cancel") {
                         print("FamilyActivityPickerView: Cancel tapped, selection: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
@@ -27,6 +26,9 @@ struct FamilyActivityPickerView: View {
                         onDone()
                     }
                 )
+        }
+        .onAppear {
+            print("FamilyActivityPickerView: Picker appeared, current selection: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
         }
         .onChange(of: selection) { newSelection in
             print("FamilyActivityPickerView: Selection changed: \(newSelection.applications.map { $0.bundleIdentifier ?? "nil" })")

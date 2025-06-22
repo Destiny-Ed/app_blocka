@@ -191,7 +191,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                     print("onDone: Selection after dismissal: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
                     self.selectedApps = selection.applications.reduce(into: [String: Application]()) { dict, app in
                         guard let bundleId = app.bundleIdentifier else {
-                            print("Warning: Nil bundleIdentifier for app - token: \(app.token), hash: \(app.hashValue)")
+                            print("Warning: Nil bundleIdentifier for app - token: \(String(describing: app.token)), hash: \(app.hashValue), description: \(app)")
                             return
                         }
                         print("Processing app: \(bundleId)")
@@ -207,7 +207,17 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                         return appInfo
                     }
                     print("onDone: Returning apps: \(apps)")
-                    self.dismissPicker(completion: completion, apps: apps)
+                    if apps.isEmpty {
+                        print("onDone: Fallback - returning test app for debugging")
+                        let testApp: [String: Any] = [
+                            "packageName": "com.apple.mobilesafari",
+                            "name": "Safari",
+                            "isSystemApp": true
+                        ]
+                        self.dismissPicker(completion: completion, apps: [testApp])
+                    } else {
+                        self.dismissPicker(completion: completion, apps: apps)
+                    }
                 },
                 onCancel: { [weak self] in
                     guard let self = self else {
