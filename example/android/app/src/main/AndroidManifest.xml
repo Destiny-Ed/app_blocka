@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" 
-    package="com.example.app_blocka_example">>
+    package="com.example.app_blocka_example">
 
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
