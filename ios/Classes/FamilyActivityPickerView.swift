@@ -14,6 +14,7 @@ struct FamilyActivityPickerView: View {
         NavigationView {
             FamilyActivityPicker(selection: $selection)
                 .navigationBarItems(trailing: Button("Done") {
+                    print("FamilyActivityPickerView: Done tapped with selection: \(selection.applications)")
                     onDismiss()
                 })
         }

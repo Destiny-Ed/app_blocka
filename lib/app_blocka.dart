@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:app_blocka/app_blocka_platform_interface.dart';
 import 'package:app_blocka/app_usage_info_model.dart';
 
@@ -19,20 +21,11 @@ class AppBlocka {
     return _platform.checkPermission();
   }
 
-  Future<bool> presentAppPicker({List<String>? bundleIds}) async {
-    try {
-      return await _platform.presentAppPicker(bundleIds: bundleIds);
-    } catch (e) {
-      print('Failed to present app picker: $e');
-      rethrow;
-    }
-  }
-
   Future<List<AppInfo>> getAvailableApps() async {
     try {
       return await _platform.getAvailableApps();
     } catch (e) {
-      print('Failed to get available apps: $e');
+      log('Failed to get available apps: $e');
       rethrow;
     }
   }
@@ -60,7 +53,7 @@ class AppBlocka {
     try {
       return await _platform.getUsageStats();
     } catch (e) {
-      print('Failed to get usage stats: $e');
+      log('Failed to get usage stats: $e');
       rethrow;
     }
   }
@@ -73,7 +66,7 @@ class AppBlocka {
     return _platform.stopBackgroundService();
   }
 
-  Stream<String> get onAppRestricted {
-    return _platform.onAppRestricted;
+  Stream<String> get onAppBloced {
+    return _platform.onAppBlocked;
   }
 }

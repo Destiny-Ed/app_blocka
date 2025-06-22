@@ -31,8 +31,7 @@ class AppListScreen extends StatefulWidget {
 
 class _AppListScreenState extends State<AppListScreen> {
   final AppBlocka _appBlocka = AppBlocka();
-  List<AppInfo> _apps = [];
-  List<AppInfo> _allApps = []; // For Android picker
+  List<AppInfo> _allApps = [];
   List<String> _selectedBundleIds = [];
 
   @override
@@ -42,37 +41,42 @@ class _AppListScreenState extends State<AppListScreen> {
   }
 
   Future<void> _initialize() async {
+    print('Initializing AppBlocka');
     await _appBlocka.initialize();
-    if (await _appBlocka.checkPermission() ||
-        await _appBlocka.requestPermission()) {
-      if (Platform.isAndroid) {
-        // Load all apps for Android picker
-        await _loadAllApps();
-      } else {
-        await _loadApps();
+    final hasPermission = await _appBlocka.checkPermission();
+    print('Permission status: $hasPermission');
+    if (!hasPermission) {
+      final granted = await _appBlocka.requestPermission();
+      print('Permission granted: $granted');
+      if (!granted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Please enable Family Controls in Settings > Screen Time',
+            ),
+          ),
+        );
+        return;
       }
     }
-  }
-
-  Future<void> _loadAllApps() async {
-    try {
-      final apps = await _appBlocka.getAvailableApps();
-      setState(() {
-        _allApps = apps;
-      });
-    } catch (e) {
-      print('Error loading all apps: $e');
-    }
+    await _loadApps();
   }
 
   Future<void> _loadApps() async {
     try {
       final apps = await _appBlocka.getAvailableApps();
+      print(
+        'Loaded apps: ${apps.length} apps - ${apps.map((a) => a.packageName).toList()}',
+      );
       setState(() {
-        _apps = apps;
+        _allApps = apps;
+        _selectedBundleIds = apps.map((a) => a.packageName).toList();
       });
     } catch (e) {
-      print('Error loading selected apps: $e');
+      print('Error loading apps: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load apps: $e')));
     }
   }
 
@@ -112,13 +116,20 @@ class _AppListScreenState extends State<AppListScreen> {
                 child: const Text('Cancel'),
               ),
               TextButton(
-                onPressed: () async {
-                  if (await _appBlocka.presentAppPicker(
-                    bundleIds: _selectedBundleIds,
-                  )) {
-                    await _loadApps();
-                    Navigator.pop(context);
-                  }
+                onPressed: () {
+                  print(
+                    'Android picker: Selected bundle IDs: $_selectedBundleIds',
+                  );
+                  setState(() {
+                    _allApps =
+                        _allApps
+                            .where(
+                              (app) =>
+                                  _selectedBundleIds.contains(app.packageName),
+                            )
+                            .toList();
+                  });
+                  Navigator.pop(context);
                 },
                 child: const Text('Done'),
               ),
@@ -135,12 +146,12 @@ class _AppListScreenState extends State<AppListScreen> {
           padding: const EdgeInsets.all(8.0),
           child: ElevatedButton(
             onPressed: () async {
+              print('Fetching apps');
               if (Platform.isAndroid) {
+                await _loadApps();
                 _showAndroidPicker();
               } else {
-                if (await _appBlocka.presentAppPicker()) {
-                  await _loadApps();
-                }
+                await _loadApps();
               }
             },
             child: const Text('Select Apps to Restrict'),
@@ -148,9 +159,9 @@ class _AppListScreenState extends State<AppListScreen> {
         ),
         Expanded(
           child: ListView.builder(
-            itemCount: _apps.length,
+            itemCount: _allApps.length,
             itemBuilder: (context, index) {
-              final app = _apps[index];
+              final app = _allApps[index];
               return ListTile(
                 leading:
                     app.icon != null
@@ -159,6 +170,7 @@ class _AppListScreenState extends State<AppListScreen> {
                 title: Text(app.name),
                 subtitle: Text(app.packageName),
                 onTap: () async {
+                  print('Blocking app: ${app.packageName}');
                   await _appBlocka.blockApp(app.packageName);
                 },
               );

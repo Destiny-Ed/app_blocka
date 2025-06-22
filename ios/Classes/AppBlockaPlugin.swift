@@ -51,6 +51,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 Task {
                     do {
                         try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                        print("Family Controls authorization granted")
                         result(true)
                     } catch {
                         print("Authorization failed: \(error)")
@@ -58,32 +59,30 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                     }
                 }
             } else {
+                print("Family Controls not available on this iOS version")
                 result(false)
             }
             
         case "checkPermission":
             if #available(iOS 16.0, *) {
                 let status = AuthorizationCenter.shared.authorizationStatus
+                print("Family Controls status: \(status)")
                 result(status == .approved)
             } else {
                 result(false)
             }
             
-        case "presentAppPicker":
+        case "getAvailableApps":
             if #available(iOS 16.0, *) {
                 guard flutterResult == nil else {
                     result(FlutterError(code: "PICKER_IN_PROGRESS", message: "Another picker is already active", details: nil))
                     return
                 }
                 flutterResult = result
-                presentFamilyActivityPicker()
+                getInstalledApps()
             } else {
-                result(false)
+                result([])
             }
-            
-        case "getAvailableApps":
-            let apps = getInstalledApps()
-            result(apps)
             
         case "setTimeLimit":
             guard let args = call.arguments as? [String: Any],
@@ -154,25 +153,69 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         }
     }
     
-    private func presentFamilyActivityPicker() {
+    private func presentFamilyActivityPicker(completion: @escaping ([[String: Any]]) -> Void) {
         if #available(iOS 16.0, *) {
             let selection = FamilyActivitySelection()
+            print("Presenting FamilyActivityPicker with initial selection: \(selection.applications)")
             let pickerView = FamilyActivityPickerView(
                 selection: selection,
                 onDismiss: { [weak self] in
-                    guard let self = self, let result = self.flutterResult else { return }
+                    guard let self = self else {
+                        print("onDismiss: self is nil")
+                        completion([])
+                        return
+                    }
+                    print("Picker dismissed with selection: \(selection.applications)")
                     self.selectedApps = selection.applications.reduce(into: [String: Application]()) { dict, app in
-                        guard let bundleId = app.bundleIdentifier else { return } // Skip if nil
+                        guard let bundleId = app.bundleIdentifier else {
+                            print("Warning: Nil bundleIdentifier for app: \(app)")
+                            return
+                        }
                         dict[bundleId] = app
                     }
-                    result(true)
-                    self.flutterResult = nil
-                    // Dismiss the picker
-                    UIApplication.shared.windows.first?.rootViewController?.dismiss(animated: true)
+                    print("Updated selectedApps: \(self.selectedApps.keys)")
+                    let apps = self.selectedApps.map { (bundleId, app) in
+                        let appInfo: [String: Any] = [
+                            "packageName": bundleId,
+                            "name": self.getAppName(for: bundleId) ?? bundleId,
+                            "isSystemApp": bundleId.hasPrefix("com.apple.")
+                        ]
+                        return appInfo
+                    }
+                    completion(apps)
+                    if let rootViewController = UIApplication.shared.windows.first?.rootViewController {
+                        rootViewController.dismiss(animated: true, completion: nil)
+                    } else {
+                        print("Warning: No rootViewController found for dismissal")
+                    }
                 }
             )
             let hostingController = UIHostingController(rootView: pickerView)
-            UIApplication.shared.windows.first?.rootViewController?.present(hostingController, animated: true)
+            if let rootViewController = UIApplication.shared.windows.first?.rootViewController {
+                rootViewController.present(hostingController, animated: true, completion: nil)
+            } else {
+                print("Error: No rootViewController found to present picker")
+                completion([])
+            }
+        } else {
+            completion([])
+        }
+    }
+    
+    private func getInstalledApps() {
+        if #available(iOS 16.0, *) {
+            presentFamilyActivityPicker { [weak self] apps in
+                guard let self = self, let result = self.flutterResult else {
+                    print("getInstalledApps: self or flutterResult is nil")
+                    return
+                }
+                print("Returning apps to Flutter: \(apps)")
+                result(apps)
+                self.flutterResult = nil
+            }
+        } else {
+            flutterResult?([])
+            flutterResult = nil
         }
     }
     
@@ -186,27 +229,17 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         }
     }
     
-    private func getInstalledApps() -> [[String: Any]] {
-        return selectedApps.map { (bundleId, app) in
-            var appInfo: [String: Any] = [
-                "packageName": bundleId,
-                "name": getAppName(for: bundleId) ?? bundleId,
-                "isSystemApp": bundleId.hasPrefix("com.apple.")
-            ]
-            if let iconData = getAppIcon(for: bundleId) {
-                appInfo["icon"] = iconData
-            }
-            return appInfo
-        }
-    }
-    
     private func getAppName(for bundleId: String) -> String? {
-        // For main app, use bundle info
         if bundleId == Bundle.main.bundleIdentifier {
             return Bundle.main.infoDictionary?["CFBundleName"] as? String
         }
-        // Fallback: Use bundle ID or a future mapping
-        return nil
+        // Add common app mappings for better UX
+        let appNameMapping: [String: String] = [
+            "com.apple.mobilesafari": "Safari",
+            "com.google.youtube": "YouTube",
+            "com.apple.mobilnotes": "Notes"
+        ]
+        return appNameMapping[bundleId]
     }
     
     private func getAppIcon(for bundleId: String) -> String? {

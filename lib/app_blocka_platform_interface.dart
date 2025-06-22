@@ -6,9 +6,7 @@ abstract class AppBlockaPlatform extends PlatformInterface {
   AppBlockaPlatform() : super(token: _token);
 
   static final Object _token = Object();
-
   static AppBlockaPlatform _instance = MethodChannelAppBlocka();
-
   static AppBlockaPlatform get instance => _instance;
 
   static set instance(AppBlockaPlatform instance) {
@@ -16,21 +14,62 @@ abstract class AppBlockaPlatform extends PlatformInterface {
     _instance = instance;
   }
 
-  Future<String?> getPlatformVersion();
-  Future<void> initialize();
-  Future<bool> requestPermission();
-  Future<bool> checkPermission();
-  Future<bool> presentAppPicker({List<String>? bundleIds});
-  Future<List<AppInfo>> getAvailableApps();
-  Future<void> setTimeLimit(String packageName, int limitMinutes);
+  Future<String?> getPlatformVersion() {
+    throw UnimplementedError('getPlatformVersion() has not been implemented.');
+  }
+
+  Future<void> initialize() {
+    throw UnimplementedError('initialize() has not been implemented.');
+  }
+
+  Future<bool> checkPermission() {
+    throw UnimplementedError('checkPermission() has not been implemented.');
+  }
+
+  Future<bool> requestPermission() {
+    throw UnimplementedError('requestPermission() has not been implemented.');
+  }
+
+  Future<List<AppInfo>> getAvailableApps() {
+    throw UnimplementedError('getAvailableApps() has not been implemented.');
+  }
+
+  Future<bool> blockApp(String packageName) {
+    throw UnimplementedError('blockApp() has not been implemented.');
+  }
+
+  Future<bool> unblockApp(String packageName) {
+    throw UnimplementedError('unblockApp() has not been implemented.');
+  }
+
+  Future<bool> startBackgroundService() {
+    throw UnimplementedError(
+      'startBackgroundService() has not been implemented.',
+    );
+  }
+
+  Future<bool> stopBackgroundService() {
+    throw UnimplementedError(
+      'stopBackgroundService() has not been implemented.',
+    );
+  }
+
+  Future<void> setTimeLimit(String packageName, int minutes) {
+    throw UnimplementedError('setTimeLimit() has not been implemented.');
+  }
+
   Future<void> setSchedule(
     String packageName,
     List<Map<String, int>> schedules,
-  );
-  Future<void> blockApp(String packageName);
-  Future<void> unblockApp(String packageName);
-  Future<List<AppUsage>> getUsageStats();
-  Future<void> startBackgroundService();
-  Future<void> stopBackgroundService();
-  Stream<String> get onAppRestricted;
+  ) {
+    throw UnimplementedError('setSchedule() has not been implemented.');
+  }
+
+  Future<List<AppUsage>> getUsageStats() {
+    throw UnimplementedError('getUsageStats() has not been implemented.');
+  }
+
+  Stream<String> get onAppBlocked {
+    throw UnimplementedError('onAppBlocked has not been implemented.');
+  }
 }
