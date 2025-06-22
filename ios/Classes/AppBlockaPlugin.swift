@@ -9,6 +9,7 @@ import BackgroundTasks
 public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
     private var restrictedApps: Set<String> = [] // Store bundle IDs
+    private var selectedApps: [String: Application] = [:] // Store bundle ID to Application
     private var timeLimits: [String: Int] = [:] // Minutes
     private var schedules: [String: [DeviceActivitySchedule]] = [:]
 
@@ -62,6 +63,22 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
             if #available(iOS 16.0, *) {
                 let status = AuthorizationCenter.shared.authorizationStatus
                 result(status == .approved)
+            } else {
+                result(false)
+            }
+            
+        case "selectApps":
+            if #available(iOS 16.0, *) {
+                Task {
+                    do {
+                        let selection = try await FamilyActivityPicker().selection
+                        self.selectedApps = selection.applications.reduce(into: [:]) { $0[$1.bundleIdentifier] = $1 }
+                        result(true)
+                    } catch {
+                        print("Failed to select apps: \(error)")
+                        result(false)
+                    }
+                }
             } else {
                 result(false)
             }
@@ -142,7 +159,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private func updateShield() {
         if #available(iOS 16.0, *) {
             let applications = restrictedApps.compactMap { bundleId -> ApplicationToken? in
-                guard let app = try? Application(bundleIdentifier: bundleId) else { return nil }
+                guard let app = selectedApps[bundleId] else { return nil }
                 return app.token
             }
             store.shield.applications = restrictedApps.isEmpty ? nil : Set(applications)
@@ -150,36 +167,33 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     }
     
     private func getInstalledApps() -> [[String: Any]] {
-        // Fallback: Return only the main app or rely on Family Controls selection
-        var apps: [[String: Any]] = []
-        if let bundleId = Bundle.main.bundleIdentifier,
-           let name = Bundle.main.infoDictionary?["CFBundleName"] as? String {
+        return selectedApps.map { (bundleId, app) in
             var appInfo: [String: Any] = [
                 "packageName": bundleId,
-                "name": name,
-                "isSystemApp": false
+                "name": app.localizedName ?? bundleId,
+                "isSystemApp": false // Simplified; no system app detection without private APIs
             ]
             if let iconData = getAppIcon(for: bundleId) {
                 appInfo["icon"] = iconData
             }
-            apps.append(appInfo)
+            return appInfo
         }
-        return apps
     }
     
     private func getAppIcon(for bundleId: String) -> String? {
-        // Return base64-encoded icon data
-        guard bundleId == Bundle.main.bundleIdentifier,
-              let iconName = Bundle.main.infoDictionary?["CFBundleIconName"] as? String,
-              let icon = UIImage(named: iconName) else {
-            return nil
+        // Try to get icon from the app bundle
+        if bundleId == Bundle.main.bundleIdentifier,
+           let iconName = Bundle.main.infoDictionary?["CFBundleIconName"] as? String,
+           let icon = UIImage(named: iconName) {
+            let size = CGSize(width: 48, height: 48)
+            UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
+            icon.draw(in: CGRect(origin: .zero, size: size))
+            let scaledImage = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
+            return scaledImage?.pngData()?.base64EncodedString()
         }
-        let size = CGSize(width: 48, height: 48)
-        UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
-        icon.draw(in: CGRect(origin: .zero, size: size))
-        let scaledImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        return scaledImage?.pngData()?.base64EncodedString()
+        // Fallback: No icon for other apps without private APIs
+        return nil
     }
     
     private func startMonitoringUsage(for bundleId: String) {

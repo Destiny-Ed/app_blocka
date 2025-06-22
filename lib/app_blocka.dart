@@ -1,52 +1,79 @@
-import 'package:app_blocka/app_time_range_model.dart';
+import 'package:app_blocka/app_blocka_platform_interface.dart';
 import 'package:app_blocka/app_usage_info_model.dart';
-import 'package:flutter/widgets.dart';
 
-import 'app_blocka_platform_interface.dart';
-
-/// AppBlocka plugin for blocking apps and managing screen time.
 class AppBlocka {
   static AppBlockaPlatform get _platform => AppBlockaPlatform.instance;
-
   Future<String?> getPlatformVersion() {
     return _platform.getPlatformVersion();
   }
 
-  static Future<void> initialize() => _platform.initialize();
+  Future<void> initialize() {
+    return _platform.initialize();
+  }
 
-  static Future<void> startBackgroundService() =>
-      _platform.startBackgroundService();
+  Future<bool> requestPermission() {
+    return _platform.requestPermission();
+  }
 
-  static Future<void> stopBackgroundService() =>
-      _platform.stopBackgroundService();
+  Future<bool> checkPermission() {
+    return _platform.checkPermission();
+  }
 
-  static void setCustomBlockedUI(
-    Widget Function(BuildContext, String) builder,
-  ) => _platform.setCustomBlockedUI(builder);
+  Future<bool> selectApps() async {
+    try {
+      return await _platform.selectApps();
+    } catch (e) {
+      print('Failed to select apps: $e');
+      rethrow;
+    }
+  }
 
-  static Future<bool> requestPermission() => _platform.requestPermission();
+  Future<List<AppInfo>> getAvailableApps() async {
+    try {
+      return await _platform.getAvailableApps();
+    } catch (e) {
+      print('Failed to get available apps: $e');
+      rethrow;
+    }
+  }
 
-  static Future<bool> checkPermission() => _platform.checkPermission();
+  Future<void> setTimeLimit(String packageName, int limitMinutes) {
+    return _platform.setTimeLimit(packageName, limitMinutes);
+  }
 
-  static Future<List<AppInfo>> getAvailableApps() =>
-      _platform.getAvailableApps();
+  Future<void> setSchedule(
+    String packageName,
+    List<Map<String, int>> schedules,
+  ) {
+    return _platform.setSchedule(packageName, schedules);
+  }
 
-  static Future<void> setTimeLimit(String packageName, Duration limit) =>
-      _platform.setTimeLimit(packageName, limit);
+  Future<void> blockApp(String packageName) {
+    return _platform.blockApp(packageName);
+  }
 
-  static Future<void> setSchedule(String packageName, List<TimeRange> ranges) =>
-      _platform.setSchedule(packageName, ranges);
+  Future<void> unblockApp(String packageName) {
+    return _platform.unblockApp(packageName);
+  }
 
-  static Future<void> blockApp(String packageName) =>
-      _platform.blockApp(packageName);
+  Future<List<AppUsage>> getUsageStats() async {
+    try {
+      return await _platform.getUsageStats();
+    } catch (e) {
+      print('Failed to get usage stats: $e');
+      rethrow;
+    }
+  }
 
-  static Future<void> unblockApp(String packageName) =>
-      _platform.unblockApp(packageName);
+  Future<void> startBackgroundService() {
+    return _platform.startBackgroundService();
+  }
 
-  static Future<List<AppUsage>> getUsageStats() => _platform.getUsageStats();
+  Future<void> stopBackgroundService() {
+    return _platform.stopBackgroundService();
+  }
 
-  static void startMonitoring(BuildContext context) =>
-      _platform.startMonitoring(context);
-
-  static void stopMonitoring() => _platform.stopMonitoring();
+  Stream<String> get onAppRestricted {
+    return _platform.onAppRestricted;
+  }
 }

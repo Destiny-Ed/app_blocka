@@ -1,104 +1,59 @@
 import 'dart:async';
 
-import 'package:app_blocka/app_time_range_model.dart';
 import 'package:app_blocka/app_usage_info_model.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import 'app_blocka_platform_interface.dart';
 
-/// An implementation of [AppBlockaPlatform] that uses method channels.
 class MethodChannelAppBlocka extends AppBlockaPlatform {
-  /// The method channel used to interact with the native platform.
-  @visibleForTesting
-  final methodChannel = const MethodChannel('app_blocka');
+  static const MethodChannel _channel = MethodChannel('app_blocka');
+  static const EventChannel _eventChannel = EventChannel('app_blocka/events');
 
-  @visibleForTesting
-  final eventChannel = EventChannel('app_blocka/events');
-
-  static StreamSubscription? _subscription;
-  static Widget Function(BuildContext, String)? _customBlockedUI;
-  static final Map<String, Duration> _timeLimits = {};
-  static final Map<String, List<TimeRange>> _schedules = {};
+  Stream<String>? _onAppRestricted;
 
   @override
   Future<String?> getPlatformVersion() async {
-    final version = await methodChannel.invokeMethod<String>(
-      'getPlatformVersion',
-    );
+    final version = await _channel.invokeMethod<String>('getPlatformVersion');
     return version;
   }
 
   @override
   Future<void> initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedLimits = prefs.getStringList('time_limits') ?? [];
-    for (var limit in savedLimits) {
-      final parts = limit.split(':');
-      if (parts.length == 2) {
-        _timeLimits[parts[0]] = Duration(minutes: int.parse(parts[1]));
-      }
-    }
-    await methodChannel.invokeMethod('initialize');
-  }
-
-  @override
-  Future<void> startBackgroundService() async {
-    try {
-      await methodChannel.invokeMethod('startBackgroundService');
-    } catch (e) {
-      debugPrint('Error starting background service: $e');
-    }
-  }
-
-  @override
-  Future<void> stopBackgroundService() async {
-    try {
-      await methodChannel.invokeMethod('stopBackgroundService');
-    } catch (e) {
-      debugPrint('Error stopping background service: $e');
-    }
-  }
-
-  @override
-  void setCustomBlockedUI(Widget Function(BuildContext, String) builder) {
-    _customBlockedUI = builder;
+    await _channel.invokeMethod('initialize');
   }
 
   @override
   Future<bool> requestPermission() async {
-    try {
-      return await methodChannel.invokeMethod('requestPermission');
-    } catch (e) {
-      debugPrint('Error requesting permission: $e');
-      return false;
-    }
+    final result = await _channel.invokeMethod<bool>('requestPermission');
+    return result ?? false;
   }
 
   @override
   Future<bool> checkPermission() async {
+    final result = await _channel.invokeMethod<bool>('checkPermission');
+    return result ?? false;
+  }
+
+  @override
+  Future<bool> selectApps() async {
     try {
-      return await methodChannel.invokeMethod('checkPermission');
+      final result = await _channel.invokeMethod<bool>('selectApps');
+      return result ?? false;
     } catch (e) {
-      debugPrint('Error checking permission: $e');
-      return false;
+      throw Exception('Error selecting apps: $e');
     }
   }
 
   @override
   Future<List<AppInfo>> getAvailableApps() async {
     try {
-      final apps = await methodChannel.invokeMethod<List<dynamic>>(
-        'getAvailableApps',
-      );
+      final apps = await _channel.invokeMethod<List<dynamic>>('getAvailableApps');
       return apps?.map((app) {
             final map = Map<String, dynamic>.from(app as Map);
             return AppInfo(
               packageName: map['packageName'] as String,
               name: map['name'] as String,
               isSystemApp: map['isSystemApp'] as bool,
-              icon: map['icon'] != null ? (map['icon'] as String) : null,
+              icon: map['icon'] as String?,
             );
           }).toList() ??
           [];
@@ -108,80 +63,41 @@ class MethodChannelAppBlocka extends AppBlockaPlatform {
   }
 
   @override
-  Future<void> setTimeLimit(String packageName, Duration limit) async {
-    _timeLimits[packageName] = limit;
-    final prefs = await SharedPreferences.getInstance();
-    final savedLimits = prefs.getStringList('time_limits') ?? [];
-    savedLimits.removeWhere((l) => l.startsWith('$packageName:'));
-    savedLimits.add('$packageName:${limit.inMinutes}');
-    await prefs.setStringList('time_limits', savedLimits);
-    try {
-      await methodChannel.invokeMethod('setTimeLimit', {
-        'packageName': packageName,
-        'limitMinutes': limit.inMinutes,
-      });
-    } catch (e) {
-      debugPrint('Error setting time limit: $e');
-    }
+  Future<void> setTimeLimit(String packageName, int limitMinutes) async {
+    await _channel.invokeMethod('setTimeLimit', {
+      'packageName': packageName,
+      'limitMinutes': limitMinutes,
+    });
   }
 
   @override
-  Future<void> setSchedule(String packageName, List<TimeRange> ranges) async {
-    _schedules[packageName] = ranges;
-    try {
-      await methodChannel.invokeMethod('setSchedule', {
-        'packageName': packageName,
-        'schedules':
-            ranges
-                .map(
-                  (r) => {
-                    'startHour': r.start.hour,
-                    'startMinute': r.start.minute,
-                    'endHour': r.end.hour,
-                    'endMinute': r.end.minute,
-                  },
-                )
-                .toList(),
-      });
-    } catch (e) {
-      debugPrint('Error setting schedule: $e');
-    }
+  Future<void> setSchedule(String packageName, List<Map<String, int>> schedules) async {
+    await _channel.invokeMethod('setSchedule', {
+      'packageName': packageName,
+      'schedules': schedules,
+    });
   }
 
   @override
   Future<void> blockApp(String packageName) async {
-    try {
-      await methodChannel.invokeMethod('blockApp', {
-        'packageName': packageName,
-      });
-    } catch (e) {
-      debugPrint('Error blocking app: $e');
-    }
+    await _channel.invokeMethod('blockApp', {'packageName': packageName});
   }
 
   @override
   Future<void> unblockApp(String packageName) async {
-    try {
-      await methodChannel.invokeMethod('unblockApp', {
-        'packageName': packageName,
-      });
-    } catch (e) {
-      debugPrint('Error unblocking app: $e');
-    }
+    await _channel.invokeMethod('unblockApp', {'packageName': packageName});
   }
 
   @override
   Future<List<AppUsage>> getUsageStats() async {
     try {
-      final stats = await methodChannel.invokeMethod<List<dynamic>>(
-        'getUsageStats',
-      );
+      final stats = await _channel.invokeMethod<List<dynamic>>('getUsageStats');
       return stats?.map((stat) {
             final map = Map<String, dynamic>.from(stat as Map);
             return AppUsage(
               packageName: map['packageName'] as String,
               usageTime: map['usageTime'] as int,
-              icon: map['icon'] != null ? (map['icon'] as String) : null,
+              icon: map['icon'] as String?,
             );
           }).toList() ??
           [];
@@ -191,46 +107,20 @@ class MethodChannelAppBlocka extends AppBlockaPlatform {
   }
 
   @override
-  void startMonitoring(BuildContext context) {
-    _subscription?.cancel();
-    _subscription = eventChannel.receiveBroadcastStream().listen((event) {
-      if (event is String && context.mounted) {
-        showBlockedUI(context, event);
-      }
-    });
+  Future<void> startBackgroundService() async {
+    await _channel.invokeMethod('startBackgroundService');
   }
 
   @override
-  void stopMonitoring() {
-    _subscription?.cancel();
-    _subscription = null;
+  Future<void> stopBackgroundService() async {
+    await _channel.invokeMethod('stopBackgroundService');
   }
 
   @override
-  void showBlockedUI(BuildContext context, String appName) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => PopScope(
-            onPopInvokedWithResult: (result, b) async => false,
-            child:
-                _customBlockedUI != null
-                    ? _customBlockedUI!(context, appName)
-                    : AlertDialog(
-                      title: const Text('App Restricted'),
-                      content: Text('Access to $appName is restricted.'),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            SystemNavigator.pop();
-                          },
-                          child: const Text('OK'),
-                        ),
-                      ],
-                    ),
-          ),
-    );
+  Stream<String> get onAppRestricted {
+    _onAppRestricted ??= _eventChannel
+        .receiveBroadcastStream()
+        .map((event) => event as String);
+    return _onAppRestricted!;
   }
 }
