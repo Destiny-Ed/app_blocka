@@ -30,7 +30,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
-         case "getPlatformVersion":
+        case "getPlatformVersion":
             result("iOS " + UIDevice.current.systemVersion)
             
         case "initialize":
@@ -162,7 +162,8 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 onDismiss: { [weak self] in
                     guard let self = self, let result = self.flutterResult else { return }
                     self.selectedApps = selection.applications.reduce(into: [String: Application]()) { dict, app in
-                        dict[app.bundleIdentifier] = app
+                        guard let bundleId = app.bundleIdentifier else { return } // Skip if nil
+                        dict[bundleId] = app
                     }
                     result(true)
                     self.flutterResult = nil
