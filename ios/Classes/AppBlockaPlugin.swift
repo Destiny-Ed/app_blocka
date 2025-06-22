@@ -161,7 +161,9 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 selection: selection,
                 onDismiss: { [weak self] in
                     guard let self = self, let result = self.flutterResult else { return }
-                    self.selectedApps = selection.applications.reduce(into: [:]) { $0[$1.bundleIdentifier] = $1 }
+                    self.selectedApps = selection.applications.reduce(into: [String: Application]()) { dict, app in
+                        dict[app.bundleIdentifier] = app
+                    }
                     result(true)
                     self.flutterResult = nil
                     // Dismiss the picker
