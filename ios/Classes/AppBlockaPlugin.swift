@@ -11,7 +11,6 @@ import BackgroundTasks
     private var restrictedApps: [String: ApplicationToken] = [:] // Map bundleId to ApplicationToken
     private var timeLimits: [String: Int] = [:] // Minutes
     private var schedules: [String: [DeviceActivitySchedule]] = [:]
-    private let defaults = UserDefaults(suiteName: "group.com.example.app_blocka")
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "app_blocka", binaryMessenger: registrar.messenger())
@@ -30,7 +29,7 @@ import BackgroundTasks
         switch call.method {
         case "getPlatformVersion":
             result("iOS " + UIDevice.current.systemVersion)
-
+            
         case "initialize":
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
             Task {
@@ -102,6 +101,10 @@ import BackgroundTasks
             }
             schedules[packageName] = deviceSchedules
             startDeviceActivityMonitoring(for: packageName)
+            if let token = restrictedApps[packageName] {
+                restrictedApps[packageName] = token
+                updateShield()
+            }
             result(nil)
             
         case "blockApp":
@@ -112,7 +115,6 @@ import BackgroundTasks
                 return
             }
             restrictedApps[bundleId] = token
-            saveToken(token, for: bundleId)
             updateShield()
             result(nil)
             
@@ -123,7 +125,6 @@ import BackgroundTasks
                 return
             }
             restrictedApps.removeValue(forKey: bundleId)
-            defaults?.removeObject(forKey: "token_\(bundleId)")
             updateShield()
             result(nil)
             
@@ -230,7 +231,6 @@ import BackgroundTasks
             let usage = 0 // Placeholder
             if usage / 60 >= limit, let token = restrictedApps[bundleId] {
                 restrictedApps[bundleId] = token
-                saveToken(token, for: bundleId)
                 updateShield()
                 showNotification(title: "Time Limit Exceeded", body: "\(bundleId) has reached its time limit.")
             }
@@ -244,17 +244,7 @@ import BackgroundTasks
         for app in authorizedApps {
             if let bundleId = app.bundleIdentifier {
                 restrictedApps[bundleId] = app.token
-                saveToken(app.token, for: bundleId)
             }
-        }
-    }
-
-    private func saveToken(_ token: ApplicationToken, for bundleId: String) {
-        do {
-            let tokenData = try NSKeyedArchiver.archivedData(withRootObject: token, requiringSecureCoding: true)
-            defaults?.set(tokenData, forKey: "token_\(bundleId)")
-        } catch {
-            print("Failed to archive token for \(bundleId): \(error)")
         }
     }
 }

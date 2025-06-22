@@ -96,7 +96,7 @@ AppBlocka.startMonitoring(context);
   <array>
       <string>com.example.app_blocka.backgroundMonitoring</string>
   </array>
-<!-- Add Family Controls and App Groups entitlements via Xcode -->
+<!-- Add Family Controls entitlement via Xcode -->
 ```
 
 ### Android
