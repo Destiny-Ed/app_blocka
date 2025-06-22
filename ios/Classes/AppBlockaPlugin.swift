@@ -176,8 +176,12 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
             }
             var selection = FamilyActivitySelection()
             print("presentFamilyActivityPicker: Initial selection: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
+            let selectionBinding = Binding(
+                get: { selection },
+                set: { selection = $0 }
+            )
             let pickerView = FamilyActivityPickerView(
-                selection: $selection,
+                selection: selectionBinding,
                 onDone: { [weak self] in
                     guard let self = self else {
                         print("onDone: self is nil")
@@ -302,7 +306,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     }
     
     private func startDeviceActivityMonitoring(for bundleId: String) {
-        guard let schedules = schedules[bubbleId] else { return }
+        guard let schedules = schedules[bundleId] else { return }
         let center = DeviceActivityCenter()
         let activityName = DeviceActivityName(rawValue: "restriction.\(bundleId)")
         do {
