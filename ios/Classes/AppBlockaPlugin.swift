@@ -130,22 +130,38 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         case "blockApp":
             guard let args = call.arguments as? [String: String],
                   let bundleId = args["packageName"] else {
+                print("blockApp: Invalid arguments")
                 result(FlutterError(code: "INVALID_ARGS", message: "Invalid package name", details: nil))
                 return
             }
+            print("blockApp: Attempting to block \(bundleId)")
             restrictedApps.insert(bundleId)
             updateShield()
-            result(nil)
+            if restrictedApps.contains(bundleId) {
+                print("blockApp: Successfully added \(bundleId) to restrictedApps")
+                result(nil)
+            } else {
+                print("blockApp: Failed to add \(bundleId) to restrictedApps")
+                result(FlutterError(code: "BLOCK_FAILED", message: "Failed to block app", details: nil))
+            }
             
         case "unblockApp":
             guard let args = call.arguments as? [String: String],
                   let bundleId = args["packageName"] else {
+                print("unblockApp: Invalid arguments")
                 result(FlutterError(code: "INVALID_ARGS", message: "Invalid package name", details: nil))
                 return
             }
+            print("unblockApp: Attempting to unblock \(bundleId)")
             restrictedApps.remove(bundleId)
             updateShield()
-            result(nil)
+            if !restrictedApps.contains(bundleId) {
+                print("unblockApp: Successfully removed \(bundleId) from restrictedApps")
+                result(nil)
+            } else {
+                print("unblockApp: Failed to remove \(bundleId) from restrictedApps")
+                result(FlutterError(code: "UNBLOCK_FAILED", message: "Failed to unblock app", details: nil))
+            }
             
         case "getUsageStats":
             let stats = getAppUsageStats()
@@ -174,22 +190,26 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 }
                 return
             }
-            var selection = FamilyActivitySelection()
-            print("presentFamilyActivityPicker: Initial selection: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
-            let selectionBinding = Binding(
-                get: { selection },
-                set: { selection = $0 }
-            )
+            // Use ObservableObject to manage selection
+            class SelectionHolder: ObservableObject {
+                @Published var selection: FamilyActivitySelection
+                init() { self.selection = FamilyActivitySelection() }
+            }
+            let holder = SelectionHolder()
+            print("presentFamilyActivityPicker: Initial selection: \(holder.selection.applications.map { $0.bundleIdentifier ?? "nil" })")
             let pickerView = FamilyActivityPickerView(
-                selection: selectionBinding,
+                selection: $holder.selection,
                 onDone: { [weak self] in
                     guard let self = self else {
                         print("onDone: self is nil")
                         completion([])
                         return
                     }
-                    print("onDone: Selection after dismissal: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
-                    self.selectedApps = selection.applications.reduce(into: [String: Application]()) { dict, app in
+                    let finalSelection = holder.selection
+                    print("onDone: Selection before processing: \(finalSelection.applications.map { app in
+                        "bundle: \(app.bundleIdentifier ?? "nil"), token: \(String(describing: app.token))"
+                    })")
+                    self.selectedApps = finalSelection.applications.reduce(into: [String: Application]()) { dict, app in
                         guard let bundleId = app.bundleIdentifier else {
                             print("Warning: Nil bundleIdentifier for app - token: \(String(describing: app.token)), hash: \(app.hashValue), description: \(app)")
                             return
@@ -207,17 +227,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                         return appInfo
                     }
                     print("onDone: Returning apps: \(apps)")
-                    if apps.isEmpty {
-                        print("onDone: Fallback - returning test app for debugging")
-                        let testApp: [String: Any] = [
-                            "packageName": "com.apple.mobilesafari",
-                            "name": "Safari",
-                            "isSystemApp": true
-                        ]
-                        self.dismissPicker(completion: completion, apps: [testApp])
-                    } else {
-                        self.dismissPicker(completion: completion, apps: apps)
-                    }
+                    self.dismissPicker(completion: completion, apps: apps)
                 },
                 onCancel: { [weak self] in
                     guard let self = self else {
@@ -230,11 +240,15 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                     self.dismissPicker(completion: completion, apps: [])
                 }
             )
-            if let rootViewController = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
-                print("Presenting picker on rootViewController")
-                rootViewController.present(UIHostingController(rootView: pickerView), animated: true, completion: nil)
+            let hostingController = UIHostingController(rootView: pickerView)
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootViewController = windowScene.windows.first?.rootViewController {
+                print("Presenting picker in sheet")
+                rootViewController.present(hostingController, animated: true) {
+                    print("Picker presentation completed")
+                }
             } else {
-                print("Error: No key window or rootViewController found to present picker")
+                print("Error: No window scene or rootViewController found to present picker")
                 completion([])
             }
         } else {
@@ -251,7 +265,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 completion(apps)
             }
         } else {
-            print("Warning: No key window or rootViewController found for dismissal")
+            print("Warning: No window scene or rootViewController found for dismissal")
             completion(apps)
         }
     }
@@ -277,11 +291,33 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     
     private func updateShield() {
         if #available(iOS 16.0, *) {
-            let applications = restrictedApps.compactMap { bundleId -> ApplicationToken? in
-                guard let app = selectedApps[bundleId] else { return nil }
-                return app.token
+            let status = AuthorizationCenter.shared.authorizationStatus
+            print("updateShield: Authorization status: \(status)")
+            guard status == .approved else {
+                print("updateShield: Authorization not approved, cannot apply shield")
+                return
             }
+            let applications = restrictedApps.compactMap { bundleId -> ApplicationToken? in
+                guard let app = selectedApps[bundleId] else {
+                    print("updateShield: No Application object for bundleId: \(bundleId)")
+                    return nil
+                }
+                guard let token = app.token else {
+                    print("updateShield: No ApplicationToken for bundleId: \(bundleId)")
+                    return nil
+                }
+                print("updateShield: Adding token for bundleId: \(bundleId)")
+                return token
+            }
+            print("updateShield: Applying shield to applications: \(applications.count) tokens")
             store.shield.applications = restrictedApps.isEmpty ? nil : Set(applications)
+            if store.shield.applications?.isEmpty ?? true {
+                print("updateShield: Shield applied, but no applications restricted")
+            } else {
+                print("updateShield: Shield applied to \(store.shield.applications!.count) applications")
+            }
+        } else {
+            print("updateShield: iOS version not supported")
         }
     }
     
@@ -323,6 +359,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
             for schedule in schedules {
                 try center.startMonitoring(activityName, during: schedule)
             }
+            print("startDeviceActivityMonitoring: Started monitoring for \(bundleId)")
         } catch {
             print("Failed to start monitoring: \(error)")
         }
@@ -356,6 +393,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
         do {
             try BGTaskScheduler.shared.submit(request)
+            print("scheduleBackgroundMonitoring: Task scheduled")
         } catch {
             print("Failed to schedule background task: \(error)")
         }

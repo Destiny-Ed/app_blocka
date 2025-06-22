@@ -22,16 +22,22 @@ struct FamilyActivityPickerView: View {
                         onCancel()
                     },
                     trailing: Button("Done") {
-                        print("FamilyActivityPickerView: Done tapped, selection: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
+                        print("FamilyActivityPickerView: Done tapped, selection: \(selection.applications.map { app in
+                            "bundle: \(app.bundleIdentifier ?? "nil"), token: \(String(describing: app.token))"
+                        })")
                         onDone()
                     }
                 )
         }
         .onAppear {
-            print("FamilyActivityPickerView: Picker appeared, current selection: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
+            print("FamilyActivityPickerView: Picker appeared, initial selection: \(selection.applications.map { app in
+                "bundle: \(app.bundleIdentifier ?? "nil"), token: \(String(describing: app.token))"
+            })")
         }
         .onChange(of: selection) { newSelection in
-            print("FamilyActivityPickerView: Selection changed: \(newSelection.applications.map { $0.bundleIdentifier ?? "nil" })")
+            print("FamilyActivityPickerView: Selection changed: \(newSelection.applications.map { app in
+                "bundle: \(app.bundleIdentifier ?? "nil"), token: \(String(describing: app.token))"
+            })")
         }
     }
 }
