@@ -158,17 +158,33 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     
     private func presentFamilyActivityPicker(completion: @escaping ([[String: Any]]) -> Void) {
         if #available(iOS 16.0, *) {
-            let selection = FamilyActivitySelection()
-            print("presentFamilyActivityPicker: Initial selection: \(selection.applications)")
+            let status = AuthorizationCenter.shared.authorizationStatus
+            print("presentFamilyActivityPicker: Authorization status: \(status)")
+            guard status == .approved else {
+                print("presentFamilyActivityPicker: Authorization not approved, requesting again")
+                Task {
+                    do {
+                        try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                        print("Re-authorization granted")
+                        self.presentFamilyActivityPicker(completion: completion)
+                    } catch {
+                        print("Re-authorization failed: \(error)")
+                        completion([])
+                    }
+                }
+                return
+            }
+            var selection = FamilyActivitySelection()
+            print("presentFamilyActivityPicker: Initial selection: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
             let pickerView = FamilyActivityPickerView(
-                selection: selection,
-                onDismiss: { [weak self] in
+                selection: $selection,
+                onDone: { [weak self] in
                     guard let self = self else {
-                        print("onDismiss: self is nil")
+                        print("onDone: self is nil")
                         completion([])
                         return
                     }
-                    print("onDismiss: Selection after dismissal: \(selection.applications)")
+                    print("onDone: Selection after dismissal: \(selection.applications.map { $0.bundleIdentifier ?? "nil" })")
                     self.selectedApps = selection.applications.reduce(into: [String: Application]()) { dict, app in
                         guard let bundleId = app.bundleIdentifier else {
                             print("Warning: Nil bundleIdentifier for app: \(app)")
@@ -177,7 +193,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                         print("Processing app: \(bundleId)")
                         dict[bundleId] = app
                     }
-                    print("onDismiss: selectedApps updated: \(self.selectedApps.keys)")
+                    print("onDone: selectedApps updated: \(self.selectedApps.keys)")
                     let apps = self.selectedApps.map { (bundleId, app) in
                         let appInfo: [String: Any] = [
                             "packageName": bundleId,
@@ -186,21 +202,23 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                         ]
                         return appInfo
                     }
-                    print("onDismiss: Returning apps: \(apps)")
-                    completion(apps)
-                    if let rootViewController = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
-                        print("Dismissing picker from rootViewController")
-                        rootViewController.dismiss(animated: true, completion: nil)
-                    } else {
-                        print("Warning: No key window or rootViewController found for dismissal")
-                        completion(apps) // Ensure completion is called even if dismissal fails
+                    print("onDone: Returning apps: \(apps)")
+                    self.dismissPicker(completion: completion, apps: apps)
+                },
+                onCancel: { [weak self] in
+                    guard let self = self else {
+                        print("onCancel: self is nil")
+                        completion([])
+                        return
                     }
+                    print("onCancel: Clearing selection")
+                    self.selectedApps = [:]
+                    self.dismissPicker(completion: completion, apps: [])
                 }
             )
-            let hostingController = UIHostingController(rootView: pickerView)
             if let rootViewController = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
                 print("Presenting picker on rootViewController")
-                rootViewController.present(hostingController, animated: true, completion: nil)
+                rootViewController.present(UIHostingController(rootView: pickerView), animated: true, completion: nil)
             } else {
                 print("Error: No key window or rootViewController found to present picker")
                 completion([])
@@ -208,6 +226,19 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         } else {
             print("presentFamilyActivityPicker: iOS version not supported")
             completion([])
+        }
+    }
+    
+    private func dismissPicker(completion: @escaping ([[String: Any]]) -> Void, apps: [[String: Any]]) {
+        if let rootViewController = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+            print("Dismissing picker from rootViewController")
+            rootViewController.dismiss(animated: true) {
+                print("Picker dismissal completed")
+                completion(apps)
+            }
+        } else {
+            print("Warning: No key window or rootViewController found for dismissal")
+            completion(apps)
         }
     }
     
@@ -331,7 +362,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
 }
 
 extension AppBlockaPlugin: FlutterStreamHandler {
-    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    public func onListen(withArguments arguments: Any?, eventSink events: @escaping Flutter) -> FlutterError? {
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             if let topApp = self.getTopAppBundleId(), self.restrictedApps.contains(topApp) {
                 events(topApp)
