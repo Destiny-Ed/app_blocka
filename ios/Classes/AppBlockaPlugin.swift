@@ -8,10 +8,11 @@ import BackgroundTasks
 
 @objc class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
-    private var restrictedApps: Set<String> = []
+    private var restrictedApps: [String: ApplicationToken] = [:] // Map bundleId to ApplicationToken
     private var timeLimits: [String: Int] = [:] // Minutes
     private var schedules: [String: [DeviceActivitySchedule]] = [:]
-    
+    private let defaults = UserDefaults(suiteName: "group.com.example.app_blocka")
+
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "app_blocka", binaryMessenger: registrar.messenger())
         let eventChannel = FlutterEventChannel(name: "app_blocka/events", binaryMessenger: registrar.messenger())
@@ -32,7 +33,10 @@ import BackgroundTasks
 
         case "initialize":
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
-            scheduleBackgroundMonitoring()
+            Task {
+                await fetchApplicationTokens()
+                self.scheduleBackgroundMonitoring()
+            }
             result(nil)
             
         case "startBackgroundService":
@@ -47,6 +51,7 @@ import BackgroundTasks
             Task {
                 do {
                     try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                    await fetchApplicationTokens()
                     result(true)
                 } catch {
                     print("Authorization failed: \(error)")
@@ -101,11 +106,13 @@ import BackgroundTasks
             
         case "blockApp":
             guard let args = call.arguments as? [String: String],
-                  let bundleId = args["packageName"] else {
-                result(FlutterError(code: "INVALID_ARGS", message: "Invalid package name", details: nil))
+                  let bundleId = args["packageName"],
+                  let token = restrictedApps[bundleId] else {
+                result(FlutterError(code: "INVALID_ARGS", message: "Invalid or unauthorized package name", details: nil))
                 return
             }
-            restrictedApps.insert(bundleId)
+            restrictedApps[bundleId] = token
+            saveToken(token, for: bundleId)
             updateShield()
             result(nil)
             
@@ -115,7 +122,8 @@ import BackgroundTasks
                 result(FlutterError(code: "INVALID_ARGS", message: "Invalid package name", details: nil))
                 return
             }
-            restrictedApps.remove(bundleId)
+            restrictedApps.removeValue(forKey: bundleId)
+            defaults?.removeObject(forKey: "token_\(bundleId)")
             updateShield()
             result(nil)
             
@@ -129,8 +137,8 @@ import BackgroundTasks
     }
     
     private func updateShield() {
-        let applications = restrictedApps.map { Application(bundleIdentifier: $0) }
-        store.shield.applications = restrictedApps.isEmpty ? nil : Set(applications)
+        let tokens = Set(restrictedApps.values)
+        store.shield.applications = tokens.isEmpty ? nil : tokens
     }
     
     private func getInstalledApps() -> [[String: Any]] {
@@ -184,12 +192,12 @@ import BackgroundTasks
     
     private func getAppUsageStats() -> [[String: Any]] {
         // Placeholder: Use DeviceActivityReport for actual implementation
-        return restrictedApps.map { app in
+        return restrictedApps.keys.map { bundleId in
             var stat: [String: Any] = [
-                "packageName": app,
+                "packageName": bundleId,
                 "usageTime": 0
             ]
-            if let iconData = getAppIcon(for: app) {
+            if let iconData = getAppIcon(for: bundleId) {
                 stat["icon"] = iconData
             }
             return stat
@@ -220,20 +228,41 @@ import BackgroundTasks
         scheduleBackgroundMonitoring()
         for (bundleId, limit) in timeLimits {
             let usage = 0 // Placeholder
-            if usage / 60 >= limit {
-                restrictedApps.insert(bundleId)
+            if usage / 60 >= limit, let token = restrictedApps[bundleId] {
+                restrictedApps[bundleId] = token
+                saveToken(token, for: bundleId)
                 updateShield()
                 showNotification(title: "Time Limit Exceeded", body: "\(bundleId) has reached its time limit.")
             }
         }
         task.setTaskCompleted(success: true)
     }
+
+    private func fetchApplicationTokens() async {
+        guard AuthorizationCenter.shared.authorizationStatus == .approved else { return }
+        let authorizedApps = await AuthorizationCenter.shared.authorizedApplications()
+        for app in authorizedApps {
+            if let bundleId = app.bundleIdentifier {
+                restrictedApps[bundleId] = app.token
+                saveToken(app.token, for: bundleId)
+            }
+        }
+    }
+
+    private func saveToken(_ token: ApplicationToken, for bundleId: String) {
+        do {
+            let tokenData = try NSKeyedArchiver.archivedData(withRootObject: token, requiringSecureCoding: true)
+            defaults?.set(tokenData, forKey: "token_\(bundleId)")
+        } catch {
+            print("Failed to archive token for \(bundleId): \(error)")
+        }
+    }
 }
 
 extension AppBlockaPlugin: FlutterStreamHandler {
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            if let topApp = self.getTopAppBundleId(), self.restrictedApps.contains(topApp) {
+            if let topApp = self.getTopAppBundleId(), self.restrictedApps.keys.contains(topApp) {
                 events(topApp)
             }
         }

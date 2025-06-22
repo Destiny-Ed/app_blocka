@@ -89,6 +89,16 @@ AppBlocka.startMonitoring(context);
 - Add a Device Activity Monitor Extension.  
 - Test via TestFlight due to Family Controls restrictions.
 
+```plist
+<key>NSUserNotificationsUsageDescription</key>
+  <string>Allow notifications for app restriction alerts.</string>
+<key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array>
+      <string>com.example.app_blocka.backgroundMonitoring</string>
+  </array>
+<!-- Add Family Controls and App Groups entitlements via Xcode -->
+```
+
 ### Android
 
 Declare permissions in `android/app/src/main/AndroidManifest.xml`:
