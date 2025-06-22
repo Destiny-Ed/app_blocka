@@ -302,7 +302,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     }
     
     private func startDeviceActivityMonitoring(for bundleId: String) {
-        guard let schedules = schedules[bundleId] else { return }
+        guard let schedules = schedules[bubbleId] else { return }
         let center = DeviceActivityCenter()
         let activityName = DeviceActivityName(rawValue: "restriction.\(bundleId)")
         do {
@@ -362,7 +362,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
 }
 
 extension AppBlockaPlugin: FlutterStreamHandler {
-    public func onListen(withArguments arguments: Any?, eventSink events: @escaping Flutter) -> FlutterError? {
+    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             if let topApp = self.getTopAppBundleId(), self.restrictedApps.contains(topApp) {
                 events(topApp)
