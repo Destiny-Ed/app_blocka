@@ -248,7 +248,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
 }
 
 extension AppBlockaPlugin: FlutterStreamHandler {
-    func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             if let topApp = self.getTopAppBundleId(), self.restrictedApps.contains(topApp) {
                 events(topApp)
@@ -257,7 +257,7 @@ extension AppBlockaPlugin: FlutterStreamHandler {
         return nil
     }
 
-    func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    public func onCancel(withArguments arguments: Any?) -> FlutterError? {
         NotificationCenter.default.removeObserver(self)
         return nil
     }
