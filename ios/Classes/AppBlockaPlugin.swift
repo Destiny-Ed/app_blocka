@@ -5,6 +5,7 @@ import ManagedSettings
 import DeviceActivity
 import UserNotifications
 import BackgroundTasks
+import SwiftUI
 
 public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
@@ -175,7 +176,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         let holder = SelectionHolder()
         print("presentPicker: Initial selection: \(holder.selection.applications.map { $0.bundleIdentifier ?? "nil" })")
         let pickerView = FamilyActivityPickerView(
-            selection: Binding(
+            selection: SwiftUI.Binding(
                 get: { holder.selection },
                 set: { holder.selection = $0 }
             ),
@@ -212,7 +213,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 self?.dismissPicker(apps: [])
             }
         )
-        let controller = UIHostingController(rootView: pickerView)
+        let controller = SwiftUI.UIHostingController(rootView: pickerView)
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first?.windows.first,
               let rootViewController = window.rootViewController else {
             print("presentPicker: No window scene or rootViewController found")
