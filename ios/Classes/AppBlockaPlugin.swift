@@ -4,7 +4,6 @@ import FamilyControls
 import ManagedSettings
 import DeviceActivity
 import UserNotifications
-import BackgroundTasks
 import SwiftUI
 
 public class AppBlockaPlugin: NSObject, FlutterPlugin {
@@ -35,22 +34,22 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 Task {
                     do {
                         try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-                        print("Family Controls authorization granted")
+                        print("requestPermission: Authorization granted")
                         result(true)
                     } catch {
-                        print("Authorization failed: \(error)")
+                        print("requestPermission: Authorization failed: \(error)")
                         result(false)
                     }
                 }
             } else {
-                print("Family Controls not available on this iOS version")
+                print("requestPermission: iOS version not supported")
                 result(false)
             }
 
         case "checkPermission":
             if #available(iOS 16.0, *) {
                 let status = AuthorizationCenter.shared.authorizationStatus
-                print("Family Controls status: \(status)")
+                print("checkPermission: Status: \(status)")
                 result(status == .approved)
             } else {
                 result(false)
@@ -69,6 +68,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
             guard let args = call.arguments as? [String: Any],
                   let bundleId = args["packageName"] as? String,
                   let minutes = args["limitMinutes"] as? Int else {
+                print("setTimeLimit: Invalid arguments")
                 result(FlutterError(code: "INVALID_ARGS", message: "Missing params", details: nil))
                 return
             }
@@ -80,6 +80,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
             guard let args = call.arguments as? [String: Any],
                   let bundleId = args["packageName"] as? String,
                   let scheduleMaps = args["schedules"] as? [[String: Int]] else {
+                print("setSchedule: Invalid arguments")
                 result(FlutterError(code: "INVALID_ARGS", message: "Missing params", details: nil))
                 return
             }
@@ -130,6 +131,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                     "icon": getAppIcon(bundleId) ?? ""
                 ]
             }
+            print("getUsageStats: Returning stats for \(stats.count) apps")
             result(stats)
 
         case "startBackgroundService":
@@ -211,30 +213,37 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
             }
         )
         let controller = UIHostingController(rootView: pickerView)
-        if let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first?.windows.first {
-            print("presentPicker: Presenting picker")
-            window.rootViewController?.present(controller, animated: true) {
-                print("presentPicker: Picker presented")
-            }
-        } else {
-            print("presentPicker: No window scene found")
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first?.windows.first,
+              let rootViewController = window.rootViewController else {
+            print("presentPicker: No window scene or rootViewController found")
             flutterResult?([])
             flutterResult = nil
+            return
+        }
+        print("presentPicker: Presenting picker")
+        rootViewController.present(controller, animated: true) {
+            print("presentPicker: Picker presented")
         }
     }
 
     private func dismissPicker(apps: [[String: Any]]) {
-        if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
-            print("dismissPicker: Dismissing picker")
-            window.rootViewController?.dismiss(animated: true) {
-                print("dismissPicker: Picker dismissed")
-                self.flutterResult?(apps)
-                self.flutterResult = nil
-            }
-        } else {
-            print("dismissPicker: No window for dismissal")
+        guard let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }),
+              let rootViewController = window.rootViewController else {
+            print("dismissPicker: No window or rootViewController for dismissal")
             flutterResult?(apps)
             flutterResult = nil
+            return
+        }
+        print("dismissPicker: Dismissing picker with apps: \(apps)")
+        rootViewController.dismiss(animated: true) {
+            print("dismissPicker: Picker dismissed")
+            if self.flutterResult != nil {
+                print("dismissPicker: Sending apps to Flutter: \(apps)")
+                self.flutterResult?(apps)
+                self.flutterResult = nil
+            } else {
+                print("dismissPicker: flutterResult is nil")
+            }
         }
     }
 
