@@ -223,3 +223,4 @@ extension AppBlockaPlugin: FlutterStreamHandler {
         return nil
     }
 }
+
