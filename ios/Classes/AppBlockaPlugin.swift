@@ -4,7 +4,7 @@ import FamilyControls
 import ManagedSettings
 import DeviceActivity
 import UserNotifications
-import SwiftUI
+import BackgroundTasks
 
 public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
@@ -187,7 +187,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                     return
                 }
                 let selection = holder.selection
-                print("onDone: Selection: \(selection.applications.map { app in "bundle: \(app.bundleIdentifier ?? "nil"), token: \(String(describing: app.token))" })")
+                print("onDone: Raw selection: \(selection.applications.map { app in "bundle: \(app.bundleIdentifier ?? "nil"), token: \(String(describing: app.token))" })")
                 self.selectedApps = selection.applications.reduce(into: [:]) { dict, app in
                     if let id = app.bundleIdentifier {
                         dict[id] = app
@@ -203,7 +203,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                         "icon": self.getAppIcon(id) ?? ""
                     ]
                 }
-                print("onDone: Returning apps: \(apps)")
+                print("onDone: Processed apps: \(apps)")
                 self.dismissPicker(apps: apps)
             },
             onCancel: { [weak self] in
@@ -236,14 +236,9 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
         }
         print("dismissPicker: Dismissing picker with apps: \(apps)")
         rootViewController.dismiss(animated: true) {
-            print("dismissPicker: Picker dismissed")
-            if self.flutterResult != nil {
-                print("dismissPicker: Sending apps to Flutter: \(apps)")
-                self.flutterResult?(apps)
-                self.flutterResult = nil
-            } else {
-                print("dismissPicker: flutterResult is nil")
-            }
+            print("dismissPicker: Picker dismissed, sending apps: \(apps)")
+            self.flutterResult?(apps)
+            self.flutterResult = nil
         }
     }
 
