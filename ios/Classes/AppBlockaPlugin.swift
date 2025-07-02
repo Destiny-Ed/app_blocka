@@ -7,7 +7,7 @@ import UserNotifications
 import BackgroundTasks
 import SwiftUI
 
-class AppBlockaPlugin: NSObject, FlutterPlugin {
+public class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
     private var restrictedApps: Set<String> = []
     private var selectedApps: [String: Application] = [:]
