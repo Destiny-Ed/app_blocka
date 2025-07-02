@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:app_blocka/app_blocka_method_channel.dart';
+import 'package:app_blocka/src/app_blocka_method_channel.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

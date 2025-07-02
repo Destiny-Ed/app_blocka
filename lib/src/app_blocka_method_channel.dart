@@ -1,4 +1,4 @@
-import 'package:app_blocka/app_blocka_platform_interface.dart';
+import 'package:app_blocka/src/app_blocka_platform_interface.dart';
 import 'package:app_blocka/app_usage_info_model.dart';
 import 'package:flutter/services.dart';
 

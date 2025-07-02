@@ -30,7 +30,6 @@ class AppListScreen extends StatefulWidget {
 }
 
 class _AppListScreenState extends State<AppListScreen> {
-  final AppBlocka _appBlocka = AppBlocka();
   List<AppInfo> _allApps = [];
   List<String> _selectedBundleIds = [];
 
@@ -42,11 +41,11 @@ class _AppListScreenState extends State<AppListScreen> {
 
   Future<void> _initialize() async {
     print('Initializing AppBlocka');
-    await _appBlocka.initialize();
-    final hasPermission = await _appBlocka.checkPermission();
+
+    final hasPermission = await AppBlocka.checkPermission();
     print('Permission status: $hasPermission');
     if (!hasPermission) {
-      final granted = await _appBlocka.requestPermission();
+      final granted = await AppBlocka.requestPermission();
       print('Permission granted: $granted');
       if (!granted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -66,7 +65,7 @@ class _AppListScreenState extends State<AppListScreen> {
   Future<void> _loadApps() async {
     try {
       print('Loading apps via getAvailableApps');
-      final apps = await _appBlocka.getAvailableApps();
+      final apps = await AppBlocka.getAvailableApps();
       print(
         'Loaded apps: ${apps.length} apps - ${apps.map((a) => a.packageName).toList()}',
       );
@@ -178,7 +177,7 @@ class _AppListScreenState extends State<AppListScreen> {
                 subtitle: Text(app.packageName),
                 onTap: () async {
                   print('Blocking app: ${app.packageName}');
-                  await _appBlocka.blockApp(app.packageName);
+                  await AppBlocka.blockApp(app.packageName);
                 },
               );
             },
