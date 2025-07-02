@@ -7,7 +7,7 @@ import UserNotifications
 import BackgroundTasks
 import SwiftUI
 
-public class AppBlockaPlugin: NSObject, FlutterPlugin {
+class AppBlockaPlugin: NSObject, FlutterPlugin {
     private let store = ManagedSettingsStore()
     private var restrictedApps: Set<String> = []
     private var selectedApps: [String: Application] = [:]
@@ -19,7 +19,6 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "app_blocka", binaryMessenger: registrar.messenger())
         let eventChannel = FlutterEventChannel(name: "app_blocka/events", binaryMessenger: registrar.messenger())
-
         let instance = AppBlockaPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
         eventChannel.setStreamHandler(instance)
@@ -36,23 +35,33 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 Task {
                     do {
                         try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                        print("Family Controls authorization granted")
                         result(true)
                     } catch {
+                        print("Authorization failed: \(error)")
                         result(false)
                     }
                 }
             } else {
+                print("Family Controls not available on this iOS version")
                 result(false)
             }
 
         case "checkPermission":
             if #available(iOS 16.0, *) {
-                result(AuthorizationCenter.shared.authorizationStatus == .approved)
+                let status = AuthorizationCenter.shared.authorizationStatus
+                print("Family Controls status: \(status)")
+                result(status == .approved)
             } else {
                 result(false)
             }
 
         case "getAvailableApps":
+            guard flutterResult == nil else {
+                print("getAvailableApps: Picker already in progress")
+                result(FlutterError(code: "PICKER_IN_PROGRESS", message: "Another picker is active", details: nil))
+                return
+            }
             flutterResult = result
             presentPicker()
 
@@ -64,6 +73,7 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 return
             }
             timeLimits[bundleId] = minutes
+            startMonitoring(bundleId)
             result(nil)
 
         case "setSchedule":
@@ -73,43 +83,51 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
                 result(FlutterError(code: "INVALID_ARGS", message: "Missing params", details: nil))
                 return
             }
-
             var deviceSchedules: [DeviceActivitySchedule] = []
             for map in scheduleMaps {
                 guard let sh = map["startHour"], let sm = map["startMinute"],
                       let eh = map["endHour"], let em = map["endMinute"] else { continue }
-                let schedule = DeviceActivitySchedule(intervalStart: DateComponents(hour: sh, minute: sm), intervalEnd: DateComponents(hour: eh, minute: em), repeats: true)
+                let schedule = DeviceActivitySchedule(
+                    intervalStart: DateComponents(hour: sh, minute: sm),
+                    intervalEnd: DateComponents(hour: eh, minute: em),
+                    repeats: true
+                )
                 deviceSchedules.append(schedule)
             }
-
             schedules[bundleId] = deviceSchedules
             startMonitoring(bundleId)
             result(nil)
 
         case "blockApp":
             guard let args = call.arguments as? [String: String], let bundleId = args["packageName"] else {
-                result(FlutterError(code: "INVALID_ARGS", message: nil, details: nil))
+                print("blockApp: Invalid arguments")
+                result(FlutterError(code: "INVALID_ARGS", message: "Invalid package name", details: nil))
                 return
             }
+            print("blockApp: Attempting to block \(bundleId)")
             restrictedApps.insert(bundleId)
             applyShield()
+            print("blockApp: restrictedApps: \(restrictedApps)")
             result(nil)
 
         case "unblockApp":
             guard let args = call.arguments as? [String: String], let bundleId = args["packageName"] else {
-                result(FlutterError(code: "INVALID_ARGS", message: nil, details: nil))
+                print("unblockApp: Invalid arguments")
+                result(FlutterError(code: "INVALID_ARGS", message: "Invalid package name", details: nil))
                 return
             }
+            print("unblockApp: Attempting to unblock \(bundleId)")
             restrictedApps.remove(bundleId)
             applyShield()
+            print("unblockApp: restrictedApps: \(restrictedApps)")
             result(nil)
 
         case "getUsageStats":
-            let stats = restrictedApps.map {
+            let stats = restrictedApps.map { bundleId in
                 [
-                    "packageName": $0,
+                    "packageName": bundleId,
                     "usageTime": 0,
-                    "icon": getAppIcon($0)
+                    "icon": getAppIcon(bundleId) ?? ""
                 ]
             }
             result(stats)
@@ -129,58 +147,142 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
 
     private func presentPicker() {
         guard #available(iOS 16.0, *) else {
+            print("presentPicker: iOS version not supported")
             flutterResult?([])
+            flutterResult = nil
             return
         }
-
+        guard AuthorizationCenter.shared.authorizationStatus == .approved else {
+            print("presentPicker: Authorization not approved")
+            Task {
+                do {
+                    try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                    print("presentPicker: Re-authorization granted")
+                    self.presentPicker()
+                } catch {
+                    print("presentPicker: Re-authorization failed: \(error)")
+                    flutterResult?([])
+                    flutterResult = nil
+                }
+            }
+            return
+        }
+        class SelectionHolder: ObservableObject {
+            @Published var selection = FamilyActivitySelection()
+        }
         let holder = SelectionHolder()
-        let pickerView = FamilyActivityPickerView(selection: $holder.selection, onDone: {
-            self.selectedApps = holder.selection.applications.reduce(into: [:]) { dict, app in
-                if let id = app.bundleIdentifier { dict[id] = app }
+        print("presentPicker: Initial selection: \(holder.selection.applications.map { $0.bundleIdentifier ?? "nil" })")
+        let pickerView = FamilyActivityPickerView(
+            selection: Binding(
+                get: { holder.selection },
+                set: { holder.selection = $0 }
+            ),
+            onDone: { [weak self] in
+                guard let self = self else {
+                    print("onDone: self is nil")
+                    self?.flutterResult?([])
+                    self?.flutterResult = nil
+                    return
+                }
+                let selection = holder.selection
+                print("onDone: Selection: \(selection.applications.map { app in "bundle: \(app.bundleIdentifier ?? "nil"), token: \(String(describing: app.token))" })")
+                self.selectedApps = selection.applications.reduce(into: [:]) { dict, app in
+                    if let id = app.bundleIdentifier {
+                        dict[id] = app
+                    } else {
+                        print("onDone: Skipping app with nil bundleIdentifier, token: \(String(describing: app.token))")
+                    }
+                }
+                let apps = self.selectedApps.map { (id, app) -> [String: Any] in
+                    [
+                        "packageName": id,
+                        "name": self.getAppName(id) ?? id,
+                        "isSystemApp": id.hasPrefix("com.apple."),
+                        "icon": self.getAppIcon(id) ?? ""
+                    ]
+                }
+                print("onDone: Returning apps: \(apps)")
+                self.dismissPicker(apps: apps)
+            },
+            onCancel: { [weak self] in
+                print("onCancel: Picker cancelled")
+                self?.selectedApps = [:]
+                self?.dismissPicker(apps: [])
             }
-
-            let apps = self.selectedApps.map { (id, app) -> [String: Any] in
-                [
-                    "packageName": id,
-                    "name": self.getAppName(id),
-                    "isSystemApp": id.hasPrefix("com.apple."),
-                    "icon": self.getAppIcon(id)
-                ]
-            }
-
-            self.flutterResult?(apps)
-            self.flutterResult = nil
-        }, onCancel: {
-            self.flutterResult?([])
-            self.flutterResult = nil
-        })
-
+        )
         let controller = UIHostingController(rootView: pickerView)
         if let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first?.windows.first {
-            window.rootViewController?.present(controller, animated: true)
+            print("presentPicker: Presenting picker")
+            window.rootViewController?.present(controller, animated: true) {
+                print("presentPicker: Picker presented")
+            }
+        } else {
+            print("presentPicker: No window scene found")
+            flutterResult?([])
+            flutterResult = nil
+        }
+    }
+
+    private func dismissPicker(apps: [[String: Any]]) {
+        if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+            print("dismissPicker: Dismissing picker")
+            window.rootViewController?.dismiss(animated: true) {
+                print("dismissPicker: Picker dismissed")
+                self.flutterResult?(apps)
+                self.flutterResult = nil
+            }
+        } else {
+            print("dismissPicker: No window for dismissal")
+            flutterResult?(apps)
+            flutterResult = nil
         }
     }
 
     private func applyShield() {
-        guard #available(iOS 16.0, *) else { return }
-        let tokens = restrictedApps.compactMap { selectedApps[$0]?.token }
-        store.shield.applications = Set(tokens)
+        guard #available(iOS 16.0, *) else {
+            print("applyShield: iOS version not supported")
+            return
+        }
+        guard AuthorizationCenter.shared.authorizationStatus == .approved else {
+            print("applyShield: Authorization not approved")
+            return
+        }
+        let tokens = restrictedApps.compactMap { bundleId -> ApplicationToken? in
+            guard let app = selectedApps[bundleId] else {
+                print("applyShield: No Application for bundleId: \(bundleId)")
+                return nil
+            }
+            guard let token = app.token else {
+                print("applyShield: No ApplicationToken for bundleId: \(bundleId)")
+                return nil
+            }
+            print("applyShield: Adding token for bundleId: \(bundleId)")
+            return token
+        }
+        print("applyShield: Applying shield to \(tokens.count) tokens")
+        store.shield.applications = tokens.isEmpty ? nil : Set(tokens)
+        print("applyShield: Shield applied to \(store.shield.applications?.count ?? 0) apps")
     }
 
     private func scheduleBackgroundTask() {
         let task = BGAppRefreshTaskRequest(identifier: "com.example.app_blocka.backgroundMonitoring")
         task.earliestBeginDate = Date(timeIntervalSinceNow: 60)
-        try? BGTaskScheduler.shared.submit(task)
+        do {
+            try BGTaskScheduler.shared.submit(task)
+            print("scheduleBackgroundTask: Task scheduled")
+        } catch {
+            print("scheduleBackgroundTask: Failed to schedule: \(error)")
+        }
     }
 
     private func handleBackgroundMonitoring(task: BGAppRefreshTask) {
         scheduleBackgroundTask()
         for (bundleId, limit) in timeLimits {
-            let usage = 0 // TODO: actual usage
+            let usage = 0 // TODO: Implement actual usage tracking
             if usage / 60 >= limit {
                 restrictedApps.insert(bundleId)
                 applyShield()
-                showNotification(title: "Time Limit", body: "\(bundleId) exceeded usage")
+                showNotification(title: "Time Limit Exceeded", body: "\(getAppName(bundleId) ?? bundleId) exceeded usage")
                 eventSink?(bundleId)
             }
         }
@@ -188,28 +290,61 @@ public class AppBlockaPlugin: NSObject, FlutterPlugin {
     }
 
     private func startMonitoring(_ bundleId: String) {
-        guard let scheduleList = schedules[bundleId] else { return }
+        guard let scheduleList = schedules[bundleId] else {
+            print("startMonitoring: No schedules for \(bundleId)")
+            return
+        }
         let center = DeviceActivityCenter()
         for schedule in scheduleList {
-            try? center.startMonitoring(DeviceActivityName(rawValue: "monitor.\(bundleId)"), during: schedule)
+            do {
+                try center.startMonitoring(DeviceActivityName(rawValue: "monitor.\(bundleId)"), during: schedule)
+                print("startMonitoring: Started for \(bundleId)")
+            } catch {
+                print("startMonitoring: Failed for \(bundleId): \(error)")
+            }
         }
     }
 
-    private func getAppName(_ id: String) -> String {
+    private func getAppName(_ id: String) -> String? {
+        if id == Bundle.main.bundleIdentifier {
+            return Bundle.main.infoDictionary?["CFBundleName"] as? String
+        }
         return [
             "com.apple.mobilesafari": "Safari",
-            "com.google.youtube": "YouTube"
+            "com.google.youtube": "YouTube",
+            "com.apple.mobilnotes": "Notes"
         ][id] ?? id
     }
 
     private func getAppIcon(_ id: String) -> String? {
-        return nil // Optional: Implement icon encoding as base64 PNG
+        if id == Bundle.main.bundleIdentifier,
+           let iconName = Bundle.main.infoDictionary?["CFBundleIconName"] as? String,
+           let icon = UIImage(named: iconName) {
+            let size = CGSize(width: 48, height: 48)
+            UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
+            icon.draw(in: CGRect(origin: .zero, size: size))
+            let scaledImage = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
+            return scaledImage?.pngData()?.base64EncodedString()
+        }
+        return nil
     }
-}
 
-@available(iOS 16.0, *)
-class SelectionHolder: ObservableObject {
-    @Published var selection = FamilyActivitySelection()
+    private func showNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("showNotification: Failed to deliver: \(error)")
+            } else {
+                print("showNotification: Delivered: \(title) - \(body)")
+            }
+        }
+    }
 }
 
 extension AppBlockaPlugin: FlutterStreamHandler {
@@ -223,4 +358,3 @@ extension AppBlockaPlugin: FlutterStreamHandler {
         return nil
     }
 }
-
